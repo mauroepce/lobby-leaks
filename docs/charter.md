@@ -15,14 +15,18 @@ Empoderar a la ciudadanía chilena poniendo en un solo grafo abierto la relació
 
 **Métricas de éxito**  
 
-| KPI                                   | Línea base 25 jun 2025 | Meta a 8 semanas |
-| ------------------------------------- | --------------------- | ---------------- |
-| Jobs de ingesta exitosos/día          | 0 / 0                 | ≥ 95 %           |
-| Visitantes únicos/semana              | 0                     | ≥ 500            |
-| PRs de la comunidad fusionadas        | 0                     | ≥ 3              |
-| PDFs ciudadanos procesados            | 0                     | ≥ 100            |
+| KPI | Fórmula ⚙️ | Línea base <br>25 jun 2025 | Meta <br>+8 semanas | Fuente de medición | Revisión |
+|-----|------------|---------------------------|---------------------|--------------------|----------|
+| **Éxito de ingesta diaria** | `jobs_ok / jobs_tot` | 0 / 0 | ≥ 95 % | Cron monitor (StatusCake) | Cada semana |
+| **Visitantes únicos / semana** | Matomo `Visits > Unique` | 0 | ≥ 500 | Matomo | Cada lunes |
+| **PRs de la comunidad fusionadas** | `PR_merged_community` | 0 | ≥ 3 | GitHub API | Fin de sprint |
+| **Tiempo mediano de proceso PDF ciudadano** | p50 `end-to-end_secs` | — | ≤ 900 s | CloudWatch (λ OCR) | Cada despliegue |
+| **Alertas lobby ↔ aporte emitidas** | `alerts_sent` | 0 | ≥ 20 | Supabase Realtime | Cada sprint |
+> *Fuentes de datos*: Matomo v5 (analytics), GitHub REST v3, Supabase Metrics, StatusCake Cron.  
+> *Cadencia de revisión*: los KPIs se comentan cada sprint (viernes) y se publican en `/docs/kpi-history.md`.
+
 
 **Roadmap**  
 Resumen visual del plan de 8 semanas en `/docs/roadmap.png` (auto-generado desde GitHub Projects).
 
-_Licencia MIT · última edición 25 jun 2025_
+_Licencia MIT · última edición 25 jun 2026_
