@@ -15,6 +15,15 @@ Get the project’s purpose, scope, and KPIs in our [Project Charter](docs/chart
 - Problemas o violaciones: escribe a **[maintainer@lobbyleaks.com](mailto:maintainer@lobbyleaks.com)**
 - Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
 
+## Quick start (≤ 5 min)
+
+```bash
+git clone <repo>
+cd lobby-leaks
+make install   # instala Node + Python deps
+make test      # corre pruebas
+```
+
 ## License
 
 This project is released under the [MIT License](LICENSE).
