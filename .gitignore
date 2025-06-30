@@ -1,0 +1,18 @@
+# Node
+node_modules/
+npm-debug.log*
+pnpm-lock.yaml  # si prefieres bloquear solo prod deps, quítalo
+
+# Python
+__pycache__/
+.env/
+*.py[cod]
+*.egg-info/
+
+# Editor / OS
+.DS_Store
+.vscode/
+
+# Build artifacts
+dist/
+coverage/

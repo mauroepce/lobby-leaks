@@ -1,0 +1,16 @@
+{
+  "name": "lobbyleaks-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "test": "jest --passWithNoTests"
+  },
+  "devDependencies": {
+    "eslint": "^9.4.0",
+    "jest": "^30.0.0"
+  }
+}
