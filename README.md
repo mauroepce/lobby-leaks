@@ -1,4 +1,6 @@
 # LobbyLeaks Digestor
+[![CI](https://github.com/mauroepce/lobby-leaks/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mauroepce/lobby-leaks/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > Transparencia del lobby en Chile · Chilean lobbying transparency portal
 
@@ -23,7 +25,3 @@ cd lobby-leaks
 make install   # instala Node + Python deps
 make test      # corre pruebas
 ```
-
-## License
-
-This project is released under the [MIT License](LICENSE).
