@@ -2,16 +2,28 @@ name: CI
 on: [pull_request]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with: {version: 9}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pnpm install
+      - run: pip install -r requirements.txt
+      - name: Run linter
+        run: make lint
+
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
-        with:
-          version: 9
-      - run: pnpm install
+        with: {version: 9}
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+        with: {python-version: '3.12'}
+      - run: pnpm install
       - run: pip install -r requirements.txt
-      - run: make test
+      - name: Run tests
+        run: make test
