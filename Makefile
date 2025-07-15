@@ -1,6 +1,9 @@
 install:
 	pnpm install
 
+lint:
+	pnpm run lint
+
 test:
 	pnpm test
 
