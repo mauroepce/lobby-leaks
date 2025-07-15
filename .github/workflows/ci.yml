@@ -36,5 +36,6 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -r requirements.txt
-      - run: uvicorn app.main:app --port 8000 &
+      - run: uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+      - run: sleep 2
       - run: pytest -q tests
