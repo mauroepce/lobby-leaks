@@ -39,3 +39,22 @@ jobs:
       - run: uvicorn app.main:app --host 0.0.0.0 --port 8000 &
       - run: sleep 2
       - run: pytest -q tests
+
+  openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      - run: pnpm install --frozen-lockfile
+      - name: Lint OpenAPI
+        run: pnpm exec redocly lint --config redocly.yaml docs/openapi.yaml
+      - name: Generate SDK & check diff
+        run: |
+          pnpm run gen-sdk
+          git diff --exit-code
