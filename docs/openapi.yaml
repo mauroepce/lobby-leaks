@@ -1,0 +1,116 @@
+openapi: 3.1.0
+info:
+  title: LobbyLeaks RPC API
+  version: "0.1.0"
+  description: >
+    Endpoint JSON‑RPC 2.0 (`/rpc2`) con cuatro acciones stub
+    que devuelven 501 mientras el MVP está en desarrollo.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.lobbyleaks.org
+    description: Producción
+  - url: http://{host}:{port}
+    description: Desarrollo local
+    variables:
+      host:
+        default: localhost
+      port:
+        default: "8000"
+
+paths:
+  /rpc2:
+    post:
+      operationId: rpc2JsonRpc
+      summary: JSON‑RPC over HTTP
+      security: []
+      description: >
+        Envia un objeto JSON‑RPC 2.0 con `method`
+        en {fetch_pdf, ocr_pdf, summarise_doc, entity_link}.
+        Parámetro opcional `jurisdiction` (ISO 3166‑1 alpha‑2),
+        por defecto `"CL"`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JSONRPCRequest"
+            examples:
+              fetchPdf:
+                $ref: "#/components/examples/fetch_pdf"
+      responses:
+        "200":
+          description: Respuesta JSON‑RPC de éxito (stub vacío).
+        "400":
+          description: Petición malformada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error400"
+        "501":
+          description: Acción no implementada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error501"
+
+components:
+  schemas:
+    JSONRPCRequest:
+      type: object
+      required: [jsonrpc, id, method, params]
+      properties:
+        jsonrpc:
+          type: string
+          enum: ["2.0"]
+        id:
+          oneOf: [{type: string}, {type: integer}]
+        method:
+          type: string
+          enum: [fetch_pdf, ocr_pdf, summarise_doc, entity_link]
+        params:
+          type: object
+          additionalProperties: false
+          properties:
+            url:
+              type: string
+              format: uri
+            file_id:
+              type: string
+            max_words:
+              type: integer
+              minimum: 1
+            text:
+              type: string
+            jurisdiction:
+              type: string
+              minLength: 2
+              maxLength: 2
+              pattern: "^[A-Z]{2}$"
+              description: Código país (ej. CL)
+    Error400:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          example: invalid method
+    Error501:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+          example: fetch_pdf not implemented yet
+  examples:
+    fetch_pdf:
+      summary: Ejemplo fetch_pdf
+      value:
+        jsonrpc: "2.0"
+        id: 1
+        method: fetch_pdf
+        params:
+          url: https://example.com/dummy.pdf
+          jurisdiction: CL
