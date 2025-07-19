@@ -4,11 +4,15 @@ import globals from 'globals';
 /** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
   js.configs.recommended,
-
+   {
+    ignores: [
+      '**/node_modules/**',
+      'clients/ts/**'
+    ]
+  },
   // Reglas generales para todo .js
   {
     files: ['**/*.js'],
-    ignores: ['**/node_modules/**'],
     languageOptions: {
       globals: {
         ...globals.node
