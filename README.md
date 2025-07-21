@@ -26,3 +26,14 @@ git clone <repo>
 cd lobby-leaks
 make install   # Node + Python deps
 make test      # run tests
+```
+
+## SDK TypeScript
+
+```bash
+pnpm run gen-sdk   # Regenera clients/ts/ desde docs/openapi.yaml
+```
+> *El cliente se genera con OpenAPI Generator* (`typescript-fetch`) y se guarda en
+`clients/ts/`.   
+> *No edites archivos generados a mano;* en su lugar actualiza
+`docs/openapi.yaml` y vuelve a ejecutar el comando.
