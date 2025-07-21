@@ -1,7 +1,6 @@
 # Node
 node_modules/
 npm-debug.log*
-pnpm-lock.yaml  # si prefieres bloquear solo prod deps, quítalo
 
 # Python
 __pycache__/
