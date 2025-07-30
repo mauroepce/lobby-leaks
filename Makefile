@@ -1,11 +1,25 @@
+ENV_FILE := .env
+
+export-env:
+	set -o allexport; \
+	. $(ENV_FILE); \
+	set +o allexport
+
 install:
 	pnpm install
+	python3 -m pip install --upgrade pip setuptools
+	python3 -m pip install -r requirements.txt
 
 lint:
 	pnpm run lint
+.ONESHELL:
+test: install export-env
+	set -o allexport && . .env && set +o allexport && \
+	pnpm test && \
+	pytest -q -m "not rls" tests
 
-test:
-	pnpm test
+test-rls: export-env db-reset
+	pytest -q tests/security/test_rls.py
 
 mcp-install:
 	python3 -m pip install --upgrade pip setuptools
@@ -18,4 +32,17 @@ mcp-test:
 	pytest -q services/mcp-hub/tests; \
 	kill $$SERVER_PID
 
+db-up:
+	./scripts/db-up.sh
 
+db-wait:
+	./scripts/db-wait.sh
+
+db-reset: db-up db-wait
+	./scripts/db-reset.sh
+
+db-smoke:
+	./scripts/db-smoke.sh
+
+psql:
+	psql "$(DB_URL)" -v ON_ERROR_STOP=1 -c "SELECT version();"
