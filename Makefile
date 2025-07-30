@@ -1,9 +1,9 @@
 ENV_FILE := .env
 
 export-env:
-	set -o allexport; \
-	. $(ENV_FILE); \
-	set +o allexport
+	@if [ -f .env ]; then \
+	  set -o allexport; . .env; set +o allexport; \
+	fi
 
 install:
 	pnpm install
@@ -12,14 +12,15 @@ install:
 
 lint:
 	pnpm run lint
+
 .ONESHELL:
+
 test: install export-env
-	set -o allexport && . .env && set +o allexport && \
-	pnpm test && \
+	pnpm test &&
 	pytest -q -m "not rls" tests
 
-test-rls: export-env db-reset
-	pytest -q tests/security/test_rls.py
+test-rls: install export-env
+	pytest -q -m rls tests/security/test_rls.py
 
 mcp-install:
 	python3 -m pip install --upgrade pip setuptools

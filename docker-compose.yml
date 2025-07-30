@@ -1,9 +1,9 @@
 services:
   db:
     image: postgres:16
+    env_file: .env 
     environment:
       POSTGRES_USER: lobbyleaks
-      POSTGRES_PASSWORD: l0bby
       POSTGRES_DB: lobbyleaks
     ports: ["5432:5432"]
 volumes: { db-data: {} }

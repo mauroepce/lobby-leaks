@@ -66,7 +66,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: lobbyleaks
-          POSTGRES_PASSWORD: l0bby
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: lobbyleaks
         ports:
           - 5432:5432
@@ -77,8 +77,9 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://lobbyleaks:l0bby@localhost:5432/lobbyleaks
-      DIRECT_URL:   postgresql://lobbyleaks:l0bby@localhost:5432/lobbyleaks
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      DATABASE_URL: postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
+      DIRECT_URL:   postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
       RUN_RLS:      "1" 
 
     steps:
@@ -101,11 +102,11 @@ jobs:
             sleep 1
           done
 
-      - name: Reset DB & apply migrations
-        run: make db-reset
+      - name: Apply migrations
+        run: pnpm prisma migrate deploy --schema=prisma/schema.prisma
 
       - name: Verify psycopg installed
         run: python -c "import psycopg, sys; print('psycopg', psycopg.__version__, 'in', sys.prefix)"
-        
+
       - name: Run RLS regression tests
         run: make test-rls
