@@ -1,9 +1,7 @@
 ENV_FILE := .env
 
 export-env:
-	@if [ -f .env ]; then \
-	  set -o allexport; . .env; set +o allexport; \
-	fi
+	set -a && [ -f $(ENV_FILE) ] && . $(ENV_FILE) || true
 
 install:
 	pnpm install
@@ -14,7 +12,6 @@ lint:
 	pnpm run lint
 
 .ONESHELL:
-
 test: install export-env
 	pnpm test && pytest -q -m "not rls" tests
 

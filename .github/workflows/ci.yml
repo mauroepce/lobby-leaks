@@ -98,18 +98,18 @@ jobs:
           python3 -m pip install --upgrade pip setuptools
           python3 -m pip install -r requirements.txt
 
-      - name: Install Node deps
-        run: pnpm install --frozen-lockfile
-
       - name: Wait for Postgres
         run: |
           until pg_isready -h localhost -p 5432 -U lobbyleaks; do
             echo "Esperando a Postgres…"
             sleep 1
           done
+      
+      - name: Install Node deps
+        run: pnpm install --frozen-lockfile
 
       - name: Apply migrations
-        run: pnpm prisma migrate deploy --schema=prisma/schema.prisma
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
 
       - name: Verify psycopg installed
         run: python -c "import psycopg, sys; print('psycopg', psycopg.__version__, 'in', sys.prefix)"
