@@ -16,8 +16,7 @@ lint:
 .ONESHELL:
 
 test: install export-env
-	pnpm test &&
-	pytest -q -m "not rls" tests
+	pnpm test && pytest -q -m "not rls" tests
 
 test-rls: install export-env
 	pytest -q -m rls tests/security/test_rls.py
