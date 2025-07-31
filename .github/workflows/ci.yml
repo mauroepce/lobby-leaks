@@ -36,9 +36,25 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -r requirements.txt
-      - run: uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-      - run: sleep 2
+
+      - name: Launch MCP
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/server.pid
+
+      - name: Wait until port 8000 is open
+        run: |
+          for i in {1..20}; do
+            nc -z localhost 8000 && exit 0
+            sleep 0.5
+          done
+          echo "MCP no arrancó a tiempo" && exit 1
+
       - run: pytest -q tests
+
+      - name: Stop MCP
+        if: always()
+        run: kill $(cat /tmp/server.pid)
 
   openapi:
     runs-on: ubuntu-latest
@@ -83,11 +99,9 @@ jobs:
       RUN_RLS:      "1" 
 
     steps:
+      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v2
         with: { version: 9 }
-
-      - uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -98,21 +112,19 @@ jobs:
           python3 -m pip install --upgrade pip setuptools
           python3 -m pip install -r requirements.txt
 
+      # wait for DB (health-check ya configurado)
       - name: Wait for Postgres
         run: |
           until pg_isready -h localhost -p 5432 -U lobbyleaks; do
             echo "Esperando a Postgres…"
             sleep 1
           done
-      
-      - name: Install Node deps
-        run: pnpm install --frozen-lockfile
+        shell: bash
 
-      - name: Apply migrations
-        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+      # apply migrations without global Prisma install (npx)
+      - run: npx prisma migrate deploy --schema=prisma/schema.prisma
+        shell: bash
 
-      - name: Verify psycopg installed
-        run: python -c "import psycopg, sys; print('psycopg', psycopg.__version__, 'in', sys.prefix)"
-
-      - name: Run RLS regression tests
-        run: make test-rls
+      - run: make test-rls
+        env:
+          RUN_RLS: "1"
