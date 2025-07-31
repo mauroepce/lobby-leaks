@@ -18,3 +18,5 @@ tests/__pycache__/
 # Build artifacts
 dist/
 coverage/
+
+/generated/prisma

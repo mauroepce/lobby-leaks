@@ -36,9 +36,25 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -r requirements.txt
-      - run: uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-      - run: sleep 2
+
+      - name: Launch MCP
+        run: |
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo $! > /tmp/server.pid
+
+      - name: Wait until port 8000 is open
+        run: |
+          for i in {1..20}; do
+            nc -z localhost 8000 && exit 0
+            sleep 0.5
+          done
+          echo "MCP no arrancó a tiempo" && exit 1
+
       - run: pytest -q tests
+
+      - name: Stop MCP
+        if: always()
+        run: kill $(cat /tmp/server.pid)
 
   openapi:
     runs-on: ubuntu-latest
@@ -57,3 +73,58 @@ jobs:
       - run: |
           pnpm run gen-sdk
           git diff --exit-code
+
+  rls-tests:
+    name: RLS security smoke tests
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lobbyleaks
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: lobbyleaks
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lobbyleaks"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      DATABASE_URL: postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
+      DIRECT_URL:   postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
+      RUN_RLS:      "1" 
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v2
+        with: { version: 9 }
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python deps
+        run: |
+          python3 -m pip install --upgrade pip setuptools
+          python3 -m pip install -r requirements.txt
+
+      # wait for DB (health-check ya configurado)
+      - name: Wait for Postgres
+        run: |
+          until pg_isready -h localhost -p 5432 -U lobbyleaks; do
+            echo "Esperando a Postgres…"
+            sleep 1
+          done
+        shell: bash
+
+      # apply migrations without global Prisma install (npx)
+      - run: npx prisma migrate deploy --schema=prisma/schema.prisma
+        shell: bash
+
+      - run: make test-rls
+        env:
+          RUN_RLS: "1"

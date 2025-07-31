@@ -22,11 +22,31 @@ Read the project’s purpose, global scope, and KPIs in the
 ## Quick start (≤ 5 min)
 
 ```bash
-git clone <repo>
+```bash
+git clone https://github.com/mauroepce/lobby-leaks.git
 cd lobby-leaks
-make install   # Node + Python deps
-make test      # run tests
+
+# 0) optional but recommended: create & activate Python venv
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+
+# 1) copy env template and adjust if needed
+cp .env.example .env         # default uses Postgres on localhost:5432
+
+# 2) install ALL dependencies (Node + Python)
+make install
+
+# 3) bootstrap database (Docker) and apply schema
+make db-reset
+
+# 4) run test suites
+make test                    # Jest + Pytest (excludes RLS)
+RUN_RLS=1 make test-rls      # Row-Level-Security regression tests
+
+# 5) lint code
+make lint
 ```
+> Tip: Postgres is started via Docker(`make db-up`).   
+> The health-check relies on `pg_isready`, following the official recommendation for Dockerised Postgres containers.
 
 ## SDK TypeScript
 
@@ -37,3 +57,33 @@ pnpm run gen-sdk   # Regenera clients/ts/ desde docs/openapi.yaml
 `clients/ts/`.   
 > *No edites archivos generados a mano;* en su lugar actualiza
 `docs/openapi.yaml` y vuelve a ejecutar el comando.
+
+<details>
+<summary>Available Make targets</summary>
+
+| Target | Purpose |
+|--------|---------|
+| `make install` | Install Node (pnpm) + Python deps |
+| `make db-up` / `make db-wait` | Spin up Postgres container & wait for `pg_isready` |
+| `make db-reset` | Reapply all Prisma migrations |
+| `make test` | Jest + Pytest (marker **not rls**) |
+| `make test-rls` | RLS smoke tests (`RUN_RLS=1`) |
+| `make lint` | ESLint |
+| `make gen-sdk` | Regenerate TypeScript client |
+
+</details>
+
+> **`RUN_RLS` flag** – The RLS suite touches Postgres roles and adds ~10 s, so it’s opt-in to keep day-to-day `make test` snappy.
+
+---
+
+### Requirements
+* **Node** ≥ 20.x  
+* **Python** ≥ 3.12  
+* **Docker** (for local Postgres 16)
+
+---
+
+### Contributing
+Please read our [**CONTRIBUTING guide**](CONTRIBUTING.md) before opening an issue or PR.
+
