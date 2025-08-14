@@ -28,33 +28,27 @@ jobs:
       - name: Run tests
         run: make test
 
-  mcp:
+  mcp-e2e:
     runs-on: ubuntu-latest
-    defaults: {run: {working-directory: services/mcp-hub}}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: {python-version: "3.12"}
-      - run: pip install -r requirements.txt
+        with:
+          python-version: "3.12"
 
-      - name: Launch MCP
-        run: |
-          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          echo $! > /tmp/server.pid
+      # deps mínimas para que pytest (del host) pueda correr los tests del hub
+      - name: Install MCP test deps
+        run: pip install -r services/mcp-hub/requirements.txt
 
-      - name: Wait until port 8000 is open
-        run: |
-          for i in {1..20}; do
-            nc -z localhost 8000 && exit 0
-            sleep 0.5
-          done
-          echo "MCP no arrancó a tiempo" && exit 1
+      # build imagen + levanta DB con docker compose + lanza hub + espera /rpc2 + corre tests
+      - name: Run MCP E2E tests
+        run: make mcp-test-e2e
 
-      - run: pytest -q tests
-
-      - name: Stop MCP
+      # asegura que no queden contenedores/volúmenes vivos aunque falle
+      - name: Teardown MCP stack
         if: always()
-        run: kill $(cat /tmp/server.pid)
+        run: make mcp-down
 
   openapi:
     runs-on: ubuntu-latest

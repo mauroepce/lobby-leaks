@@ -1,34 +1,72 @@
 # Contributing to LobbyLeaks
 
-## Branch workflow  
-1. **Feature branch** – start from `main` with a prefix such as  
-   `feat/`, `fix/`, `chore/`, etc.  
-2. **Pull Request** – open a PR to `main` and link the issue  
-   (e.g. `Fixes #42`).  
-3. **Status checks** – PRs **must** be green on *lint* + *tests* + *RLS* before merge.  
-4. **Self-review** – while we have few maintainers, use the PR checklist yourself.  
-5. **Merge** – “Squash & merge” keeps history tidy.
+## Branch workflow
+
+1. **Create a feature branch** off `main` with a clear prefix:  
+   `feat/…`, `fix/…`, `chore/…`, `docs/…`, `refactor/…`.
+2. **Open a Pull Request** to `main` and link the issue (e.g. `Fixes #42`).
+3. **❗ Status checks must be green** (lint + tests + RLS + MCP e2e) before merge.
+4. **Self-review** using the checklist below.
+5. **Merge** with **Squash & merge** to keep history tidy.
+
+> 💡 **Tip**: prefer Conventional Commit messages (e.g. `feat(chile): add tenant header middleware`).
 
 ---
 
-## Local checklist 🛠️
+## 📋 Requirements
 
-Run **all** of the following before opening a PR – they mirror the CI matrix:
+- **Node** ≥ 20  
+- **Python** ≥ 3.12  
+- **Docker Desktop** (Postgres 16 runs in a container)
+
+---
+
+## 🚀 Local setup (one-time)
 
 ```bash
-# 0) (optional) create an isolated Python env
-python -m venv .venv && source .venv/bin/activate
+# optional but recommended
+python -m venv .venv && source .venv/bin/activate  # Win: .venv\Scripts\activate
 
-# 1) install every dependency (Node + Python)
-make install
+cp .env.example .env
 
-# 2) run unit + integration tests (RLS suite excluded)
-make test
-
-# 3) run Row-Level-Security (RLS) tests
-RUN_RLS=1 make test-rls      # spins up Postgres, resets schema, executes checks
-
-# 4) lint JavaScript/TypeScript sources
-make lint
+make bootstrap    # installs repo deps + MCP hub deps
 ```
-> *Why the extra flag?* The RLS suite manipulates Postgres users and takes a few extra seconds, so we gate it behind the `RUN_RLS` environment variable (a common pattern for optional security tests).
+
+## ⚡ Day-to-day
+
+```bash
+make quick        # lint + unit tests + MCP e2e (Docker)
+```
+
+## ✅ Full pre-PR checklist
+
+**❗ Run all before opening a PR — mirrors CI:**
+
+```bash
+# 1) Full pipeline: DB up, lint, unit, RLS, MCP e2e
+make verify
+
+# (optional) same as above but also tears down containers/volumes at the end
+make verify-clean
+```
+
+### What `verify` covers
+
+- **Lint** (ESLint)
+- **Unit tests** (Jest + Pytest)
+- **RLS tests** (`RUN_RLS=1 make test-rls`)
+- **MCP e2e** (`make mcp-test-e2e`): builds the hub image, brings up Postgres, waits for `/rpc2`, runs hub tests, then stops only the hub container.
+
+**Need to poke the hub manually?** `make mcp-curl`
+- **Expected**: 400 without header, 501 with `X-Tenant-Id: CL`.
+
+---
+
+## 🔍 PR self-review checklist
+
+- [ ] **Branch name is descriptive** (e.g. `feat/chile-tenant-context`).
+- [ ] **Added/updated tests** (unit and/or e2e) and they pass locally.
+- [ ] **❗ `make verify` is green locally**; CI badge turns green on the PR.
+- [ ] **No secrets committed** (`.env`, passwords, tokens).
+- [ ] **Docs updated** when behavior or API changed (README/OpenAPI/notes).
+- [ ] **Changes are minimal, focused, and readable**.
