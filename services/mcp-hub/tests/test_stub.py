@@ -1,10 +1,15 @@
-import httpx, asyncio
+# services/mcp-hub/tests/test_stub.py
+import httpx
 
-async def call(method):
-    async with httpx.AsyncClient(base_url="http://localhost:8000") as c:
-        r = await c.post("/rpc2", json={"jsonrpc":"2.0","id":1,"method":method,"params":{}})
-    assert r.status_code == 501
+BASE = "http://localhost:8000"
+PAYLOAD = {"jsonrpc": "2.0", "id": 1, "method": None, "params": {}}
+HEADERS = {"X-Tenant-Id": "CL"}
+
+def call(method: str) -> httpx.Response:
+    with httpx.Client(base_url=BASE, timeout=3.0) as c:
+        return c.post("/rpc2", json={**PAYLOAD, "method": method}, headers=HEADERS)
 
 def test_all_stubs():
-    for m in ("fetch_pdf","ocr_pdf","summarise_doc","entity_link"):
-        asyncio.run(call(m))
+    for m in ("fetch_pdf", "ocr_pdf", "summarise_doc", "entity_link"):
+        r = call(m)
+        assert r.status_code == 501

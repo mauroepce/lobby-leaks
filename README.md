@@ -1,86 +1,90 @@
 # LobbyLeaks
+
 [![CI](https://github.com/mauroepce/lobby-leaks/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mauroepce/lobby-leaks/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![OpenAPI](https://img.shields.io/badge/openapi-validated-brightgreen?logo=openapi)](docs/openapi.yaml)
 
-> Transparencia global del lobby — primer módulo operativo: **Chile** 🇨🇱  
+> Transparencia global del lobby — primer módulo operativo: **Chile** 🇨🇱
 
 ## ¿Qué es LobbyLeaks?
 
-Conoce la misión, el alcance global y las métricas en nuestro  
-[Project Charter](docs/charter.md).
+Conoce misión, alcance y métricas en el [Project Charter](docs/charter.md).
 
 ## What is LobbyLeaks?
 
-Read the project’s purpose, global scope, and KPIs in the  
-[Project Charter](docs/charter.md).
+Read purpose, scope and KPIs in the [Project Charter](docs/charter.md).
 
-## Security & Conduct
-- Issues or violations? email **[maintainer@lobbyleaks.com](mailto:maintainer@lobbyleaks.com)**
-- Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+## Security & Conduct
 
-## Quick start (≤ 5 min)
+- Issues or violations? **[maintainer@lobbyleaks.com](mailto:maintainer@lobbyleaks.com)**
+- Please read our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-```bash
+---
+
+## Quick start (≤ 5 min)
+
 ```bash
 git clone https://github.com/mauroepce/lobby-leaks.git
 cd lobby-leaks
 
-# 0) optional but recommended: create & activate Python venv
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+# (opcional) entorno Python
+python -m venv .venv && source .venv/bin/activate   # Win: .venv\Scripts\activate
 
-# 1) copy env template and adjust if needed
-cp .env.example .env         # default uses Postgres on localhost:5432
+# env base
+cp .env.example .env
 
-# 2) install ALL dependencies (Node + Python)
-make install
+# instala deps del repo + hub MCP
+make bootstrap
 
-# 3) bootstrap database (Docker) and apply schema
-make db-reset
-
-# 4) run test suites
-make test                    # Jest + Pytest (excludes RLS)
-RUN_RLS=1 make test-rls      # Row-Level-Security regression tests
-
-# 5) lint code
-make lint
+# ruta rápida diaria: lint + unit + e2e del hub (Docker)
+make quick
 ```
-> Tip: Postgres is started via Docker(`make db-up`).   
-> The health-check relies on `pg_isready`, following the official recommendation for Dockerised Postgres containers.
 
-## SDK TypeScript
+Pipeline completo (incluye RLS):
+
+```bash
+make verify         # instala, sube DB, lint, unit, RLS, e2e MCP
+make verify-clean   # igual que verify y luego baja contenedores/volúmenes
+```
+
+Requisitos: Node 20+, Python 3.12+, Docker (Postgres 16 en contenedor).
+
+## SDK TypeScript
 
 ```bash
 pnpm run gen-sdk   # Regenera clients/ts/ desde docs/openapi.yaml
 ```
-> *El cliente se genera con OpenAPI Generator* (`typescript-fetch`) y se guarda en
-`clients/ts/`.   
-> *No edites archivos generados a mano;* en su lugar actualiza
-`docs/openapi.yaml` y vuelve a ejecutar el comando.
 
-<details>
-<summary>Available Make targets</summary>
+El cliente se genera con OpenAPI Generator (typescript-fetch) en `clients/ts/`.
 
-| Target | Purpose |
-|--------|---------|
-| `make install` | Install Node (pnpm) + Python deps |
-| `make db-up` / `make db-wait` | Spin up Postgres container & wait for `pg_isready` |
-| `make db-reset` | Reapply all Prisma migrations |
-| `make test` | Jest + Pytest (marker **not rls**) |
-| `make test-rls` | RLS smoke tests (`RUN_RLS=1`) |
-| `make lint` | ESLint |
-| `make gen-sdk` | Regenerate TypeScript client |
+No edites archivos generados; modifica `docs/openapi.yaml` y vuelve a generar.
 
-</details>
+## Make targets
 
-> **`RUN_RLS` flag** – The RLS suite touches Postgres roles and adds ~10 s, so it’s opt-in to keep day-to-day `make test` snappy.
+### Atajos "todo en uno"
 
----
+- `make bootstrap` — instala deps del repo + MCP hub
+- `make quick` — lint + unit + e2e del hub
+- `make verify` — flujo completo (DB, lint, unit, RLS, e2e)
+- `make verify-clean` — igual que verify y luego limpia todo
 
-### Requirements
-* **Node** ≥ 20.x  
-* **Python** ≥ 3.12  
-* **Docker** (for local Postgres 16)
+### Base
+
+- `make install` — deps Node/Python del repo
+- `make lint` — ESLint
+- `make test` — Jest + Pytest (excluye RLS)
+- `RUN_RLS=1 make test-rls` — smoke de Row-Level-Security (requiere DB)
+
+### DB / MCP (Docker)
+
+- `make db-up` / `make db-reset` — subir DB / resetear + migrar
+- `make mcp-test-e2e` — build imagen → subir DB → arrancar hub → esperar /rpc2 → tests del hub → apagar hub
+- `make mcp-curl` — comprobación manual:
+  - sin header → 400
+  - con X-Tenant-Id: CL → 501
+- `make mcp-down` — bajar todo (incluye volúmenes)
+
+Los comandos e2e crean la red `*_default` de compose, levantan Postgres y pasan `DATABASE_URL` al contenedor del hub.
 
 ---
 
