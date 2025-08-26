@@ -90,14 +90,15 @@ jobs:
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       DATABASE_URL: postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
       DIRECT_URL:   postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
-      RUN_RLS:      "1" 
 
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-        with: { version: 9 }
-      - name: Setup Python
-        uses: actions/setup-python@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -106,7 +107,11 @@ jobs:
           python3 -m pip install --upgrade pip setuptools
           python3 -m pip install -r requirements.txt
 
-      # wait for DB (health-check ya configurado)
+      - name: Install Postgres client (for pg_isready)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Wait for Postgres
         run: |
           until pg_isready -h localhost -p 5432 -U lobbyleaks; do
@@ -115,10 +120,12 @@ jobs:
           done
         shell: bash
 
-      # apply migrations without global Prisma install (npx)
-      - run: npx prisma migrate deploy --schema=prisma/schema.prisma
+      - name: Apply migrations
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
         shell: bash
 
-      - run: make test-rls
-        env:
-          RUN_RLS: "1"
+      - name: Seed leaks
+        run: npx prisma db execute --file scripts/seed.sql --schema=prisma/schema.prisma
+
+      - name: Run RLS tests
+        run: make test-rls
