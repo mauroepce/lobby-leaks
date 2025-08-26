@@ -78,12 +78,21 @@ mcp-build:
 mcp-up-db: db-up
 
 # lanza el hub cuando la DB está lista
-mcp-run: mcp-build mcp-up-db db-wait
+mcp-run: mcp-build
 	-@docker rm -f $(MCP_CONT) >/dev/null 2>&1 || true
+ifdef CI
+	@echo "CI: ejecutando mcp-hub con --network=host y DATABASE_URL=$(DATABASE_URL)"
+	@docker run -d --name $(MCP_CONT) \
+	  --network host \
+	  -e DATABASE_URL="$(DATABASE_URL)" \
+	  $(MCP_IMAGE)
+else
+	$(MAKE) -s mcp-up-db db-wait
 	@docker run -d --name $(MCP_CONT) \
 	  --network $(COMPOSE_NET) \
 	  -e DATABASE_URL=$(DB_DSN) \
 	  -p 8000:8000 $(MCP_IMAGE)
+endif
 
 # espera a que /rpc2 responda (501 con header o 400 sin header)
 mcp-wait:

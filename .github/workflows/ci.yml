@@ -30,6 +30,24 @@ jobs:
 
   mcp-e2e:
     runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lobbyleaks
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: lobbyleaks
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lobbyleaks"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
+      DIRECT_URL:   postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
+
     steps:
       - uses: actions/checkout@v4
 
@@ -37,18 +55,24 @@ jobs:
         with:
           python-version: "3.12"
 
-      # deps mínimas para que pytest (del host) pueda correr los tests del hub
-      - name: Install MCP test deps
-        run: pip install -r services/mcp-hub/requirements.txt
+      # Py deps mínimas para ejecutar pytest del host
+      - name: Install test deps
+        run: pip install -r requirements.txt
 
-      # build imagen + levanta DB con docker compose + lanza hub + espera /rpc2 + corre tests
-      - name: Run MCP E2E tests
+      - name: Wait for Postgres
+        run: |
+          until pg_isready -h localhost -p 5432 -U lobbyleaks; do
+            echo "Esperando a Postgres…"
+            sleep 1
+          done
+
+      - name: Run MCP e2e via Makefile
         run: make mcp-test-e2e
 
-      # asegura que no queden contenedores/volúmenes vivos aunque falle
-      - name: Teardown MCP stack
+      - name: Teardown (best-effort)
         if: always()
-        run: make mcp-down
+        run: make mcp-stop
+
 
   openapi:
     runs-on: ubuntu-latest
