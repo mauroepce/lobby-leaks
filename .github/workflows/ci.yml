@@ -30,6 +30,24 @@ jobs:
 
   mcp-e2e:
     runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: lobbyleaks
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: lobbyleaks
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lobbyleaks"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
+      DIRECT_URL:   postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
+
     steps:
       - uses: actions/checkout@v4
 
@@ -37,18 +55,24 @@ jobs:
         with:
           python-version: "3.12"
 
-      # deps mínimas para que pytest (del host) pueda correr los tests del hub
-      - name: Install MCP test deps
-        run: pip install -r services/mcp-hub/requirements.txt
+      # Py deps mínimas para ejecutar pytest del host
+      - name: Install test deps
+        run: pip install -r requirements.txt
 
-      # build imagen + levanta DB con docker compose + lanza hub + espera /rpc2 + corre tests
-      - name: Run MCP E2E tests
+      - name: Wait for Postgres
+        run: |
+          until pg_isready -h localhost -p 5432 -U lobbyleaks; do
+            echo "Esperando a Postgres…"
+            sleep 1
+          done
+
+      - name: Run MCP e2e via Makefile
         run: make mcp-test-e2e
 
-      # asegura que no queden contenedores/volúmenes vivos aunque falle
-      - name: Teardown MCP stack
+      - name: Teardown (best-effort)
         if: always()
-        run: make mcp-down
+        run: make mcp-stop
+
 
   openapi:
     runs-on: ubuntu-latest
@@ -90,14 +114,15 @@ jobs:
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
       DATABASE_URL: postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
       DIRECT_URL:   postgresql://lobbyleaks:${{ secrets.POSTGRES_PASSWORD }}@localhost:5432/lobbyleaks
-      RUN_RLS:      "1" 
 
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-        with: { version: 9 }
-      - name: Setup Python
-        uses: actions/setup-python@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
@@ -106,7 +131,11 @@ jobs:
           python3 -m pip install --upgrade pip setuptools
           python3 -m pip install -r requirements.txt
 
-      # wait for DB (health-check ya configurado)
+      - name: Install Postgres client (for pg_isready)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Wait for Postgres
         run: |
           until pg_isready -h localhost -p 5432 -U lobbyleaks; do
@@ -115,10 +144,12 @@ jobs:
           done
         shell: bash
 
-      # apply migrations without global Prisma install (npx)
-      - run: npx prisma migrate deploy --schema=prisma/schema.prisma
+      - name: Apply migrations
+        run: npx prisma migrate deploy --schema=prisma/schema.prisma
         shell: bash
 
-      - run: make test-rls
-        env:
-          RUN_RLS: "1"
+      - name: Seed leaks
+        run: npx prisma db execute --file scripts/seed.sql --schema=prisma/schema.prisma
+
+      - name: Run RLS tests
+        run: make test-rls
