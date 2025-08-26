@@ -33,16 +33,24 @@ test-rls: export-env db-up db-wait seed
 
 # ========= DB (Docker Compose) =========
 db-up: ## levanta Postgres (idempotente)
-	docker compose up -d db
+	@if [ -n "$$CI" ]; then \
+	  echo "CI: saltando db-up (service db ya está levantado)"; \
+	else \
+	  docker compose up -d db; \
+	fi
 
 # espera a que Postgres esté healthy en el contenedor de compose
 db-wait:
-	@echo "⏳ Esperando a Postgres…"
-	@for i in $$(seq 1 60); do \
-	  docker compose exec -T db pg_isready -U lobbyleaks >/dev/null 2>&1 && { echo "✅ DB lista"; exit 0; }; \
-	  sleep 1; \
-	done; \
-	echo "❌ DB no respondió a tiempo"; exit 1
+	@if [ -n "$$CI" ]; then \
+	  echo "CI: saltando db-wait (el workflow ya espera con pg_isready)"; \
+	else \
+	  echo "⏳ Esperando a Postgres…"; \
+	  for i in $$(seq 1 60); do \
+	    docker compose exec -T db pg_isready -U lobbyleaks >/dev/null 2>&1 && { echo "✅ DB lista"; exit 0; }; \
+	    sleep 1; \
+	  done; \
+	  echo "❌ DB no respondió a tiempo"; exit 1; \
+	fi
 
 # seed vía Prisma (evita depender de psql en el runner)
 seed:
