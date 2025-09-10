@@ -32,14 +32,13 @@ test-rls: export-env db-up db-wait seed
 	$(PYTEST) -q -m rls tests/security
 
 # ========= DB (Docker Compose) =========
-db-up: ## levanta Postgres (idempotente)
+db-up:
 	@if [ -n "$$CI" ]; then \
 	  echo "CI: saltando db-up (service db ya está levantado)"; \
 	else \
 	  docker compose up -d db; \
 	fi
 
-# espera a que Postgres esté healthy en el contenedor de compose
 db-wait:
 	@if [ -n "$$CI" ]; then \
 	  echo "CI: saltando db-wait (el workflow ya espera con pg_isready)"; \
@@ -52,11 +51,14 @@ db-wait:
 	  echo "❌ DB no respondió a tiempo"; exit 1; \
 	fi
 
-# seed vía Prisma (evita depender de psql en el runner)
-seed:
+# Aplica migraciones (no destruye datos)
+migrate:
+	npx prisma migrate deploy --schema=prisma/schema.prisma
+
+seed: migrate
 	npx prisma db execute --file scripts/seed.sql --schema=prisma/schema.prisma
 
-# reaplica migraciones + seed
+# Reset destructivo + seed para desarrollo local
 db-reset: db-up db-wait
 	pnpm prisma migrate reset --force --schema=prisma/schema.prisma --skip-seed
 	$(MAKE) -s seed
@@ -138,6 +140,7 @@ quick: lint test ## lint + unit + e2e MCP
 	$(MAKE) -s mcp-test-e2e
 
 verify: bootstrap db-up db-wait lint test ## pipeline completo
+	$(MAKE) -s seed
 	$(MAKE) -s test-rls
 	$(MAKE) -s mcp-test-e2e
 
@@ -162,6 +165,7 @@ mcp-test:
 	)
 
 # ========= PHONY =========
+.PHONY: migrate seed db-up db-wait db-reset verify
 .PHONY: export-env install lint test test-rls db-up db-wait seed db-reset psql \
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
         bootstrap quick verify verify-clean mcp-install mcp-test
