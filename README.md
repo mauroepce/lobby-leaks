@@ -3,6 +3,7 @@
 [![CI](https://github.com/mauroepce/lobby-leaks/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mauroepce/lobby-leaks/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![OpenAPI](https://img.shields.io/badge/openapi-validated-brightgreen?logo=openapi)](docs/openapi.yaml)
+[![Security Docs](https://img.shields.io/badge/security-docs%20✅-blue)](docs/security/rls.md)
 
 > Transparencia global del lobby — primer módulo operativo: **Chile** 🇨🇱
 
