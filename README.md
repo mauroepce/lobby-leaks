@@ -92,3 +92,9 @@ Los comandos e2e crean la red `*_default` de compose, levantan Postgres y pasan 
 ### Contributing
 Please read our [**CONTRIBUTING guide**](CONTRIBUTING.md) before opening an issue or PR.
 
+## 🗣 Community
+
+Have questions, ideas or want to share feedback?  
+👉 Join the conversation in our [GitHub Discussions](../../discussions).
+
+
