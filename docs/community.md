@@ -7,19 +7,19 @@ This document explains how to participate, where to post, and the basic rules we
 
 ## 💬 Where to talk
 
-We use [GitHub Discussions](../../discussions) as the main hub for community interaction.  
+We use [GitHub Discussions](../../discussions) as the main hub for community interaction.
 Please choose the right category for your post:
 
-- [**Announcements**](../../discussions/categories/announcements)  
-  Official updates from maintainers (releases, roadmap changes).  
+- [**Announcements**](../../discussions/categories/announcements)
+  Official updates from maintainers (releases, roadmap changes).
   🔒 Read-only for community; only maintainers can start threads here.
 
-- [**Q&A**](../../discussions/categories/q-a)  
+- [**Q&A**](../../discussions/categories/q-a)
   Ask and answer technical questions. Mark accepted answers to help future readers.
 
-- [**Ideas**](../../discussions/categories/ideas)  
-  Propose features, integrations, or improvements.  
-  👉 Polls are enabled here so the community can vote on priorities.  
+- [**Ideas**](../../discussions/categories/ideas)
+  Propose features, integrations, or improvements.
+  👉 Polls are enabled here so the community can vote on priorities.
   ⚠️ Note: polls are for **informal feedback only**. Maintainers make final calls based on scope and roadmap.
 
 Start here: [Welcome to the LobbyLeaks community 🎉](../../discussions/47)  

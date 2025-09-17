@@ -94,7 +94,13 @@ Please read our [**CONTRIBUTING guide**](CONTRIBUTING.md) before opening an issu
 
 ## 🗣 Community
 
-Have questions, ideas or want to share feedback?  
-👉 Join the conversation in our [GitHub Discussions](../../discussions).
+We use [GitHub Discussions](../../discussions) for community interaction.  
+Choose the right category for your post:
+
+- **Announcements** – official updates from maintainers.  
+- **Q&A** – ask questions and get help from the community.  
+- **Ideas** – propose new features (polls enabled for informal feedback).
+
+👉 Read the full [Community Guide](./docs/community.md) for details and rules.
 
 
