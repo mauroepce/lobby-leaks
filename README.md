@@ -60,12 +60,33 @@ El cliente se genera con OpenAPI Generator (typescript-fetch) en `clients/ts/`.
 
 No edites archivos generados; modifica `docs/openapi.yaml` y vuelve a generar.
 
+## 🎯 Plantilla de Servicios
+
+El proyecto incluye una **plantilla reutilizable** para crear nuevos servicios de ingesta de datos:
+
+```bash
+# Tests de la plantilla
+make template-test              # Todos los tests (57 tests)
+make template-test-unit         # Tests unitarios (mockeados)
+make template-test-integration  # Tests de integración (funcionalidad real)
+```
+
+**Características**:
+- 🔄 Cliente HTTPX con retries y backoff exponencial
+- ⚙️ Configuración Pydantic con validación automática
+- 📝 Logging JSON estructurado con structlog
+- 🖥️ CLI con argparse y manejo de errores
+- 🧪 57 tests (unitarios + integración)
+
+👉 Documentación completa: **[services/_template/README.md](services/_template/README.md)**
+
 ## Make targets
 
 ### Atajos "todo en uno"
 
 - `make bootstrap` — instala deps del repo + MCP hub
 - `make quick` — lint + unit + e2e del hub
+- `make test-all` — **todos los tests** (lint + unit + template + e2e)
 - `make verify` — flujo completo (DB, lint, unit, RLS, e2e)
 - `make verify-clean` — igual que verify y luego limpia todo
 
@@ -75,6 +96,12 @@ No edites archivos generados; modifica `docs/openapi.yaml` y vuelve a generar.
 - `make lint` — ESLint
 - `make test` — Jest + Pytest (excluye RLS)
 - `RUN_RLS=1 make test-rls` — smoke de Row-Level-Security (requiere DB)
+
+### Plantilla de Servicios
+
+- `make template-test` — todos los tests del template (57 tests)
+- `make template-test-unit` — solo tests unitarios (mockeados)
+- `make template-test-integration` — solo tests de integración
 
 ### DB / MCP (Docker)
 

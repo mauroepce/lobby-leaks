@@ -36,6 +36,7 @@ make bootstrap    # installs repo deps + MCP hub deps
 
 ```bash
 make quick        # lint + unit tests + MCP e2e (Docker)
+make test-all     # todos los tests (lint + unit + template + MCP e2e)
 ```
 
 ## ✅ Full pre-PR checklist
@@ -56,6 +57,14 @@ make verify-clean
 - **Unit tests** (Jest + Pytest)
 - **RLS tests** (`RUN_RLS=1 make test-rls`)
 - **MCP e2e** (`make mcp-test-e2e`): builds the hub image, brings up Postgres, waits for `/rpc2`, runs hub tests, then stops only the hub container.
+
+### Alternative: `make test-all`
+
+Si solo necesitas verificar tests (sin RLS ni DB setup completo):
+
+```bash
+make test-all     # lint + unit + template (57 tests) + MCP e2e
+```
 
 **Need to poke the hub manually?** `make mcp-curl`
 - **Expected**: 400 without header, 501 with `X-Tenant-Id: CL`.
