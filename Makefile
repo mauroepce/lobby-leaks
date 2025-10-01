@@ -150,7 +150,7 @@ verify: bootstrap db-up db-wait lint test ## pipeline completo
 verify-clean: verify ## igual que verify, pero baja todo al final
 	$(MAKE) -s mcp-down
 
-test-all: lint test template-test ## ejecuta todos los tests (main + template)
+test-all: lint test db-up db-wait seed template-test test-rls ## ejecuta todos los tests (main + template + db + rls + e2e)
 	$(MAKE) -s mcp-test-e2e
 
 # ========= Helpers del hub local =========
@@ -179,8 +179,11 @@ template-test-unit: template-install ## run only unit tests (mocked)
 template-test-integration: template-install ## run only integration tests (real functionality)
 	$(PYTEST) -q services/_template/tests -v -m integration
 
+template-db-test: template-install db-up db-wait ## run database-specific tests
+	$(PYTEST) -q services/_template/tests/test_upsert.py -v
+
 # ========= PHONY =========
 .PHONY: migrate seed db-up db-wait db-reset verify
 .PHONY: export-env install template-install lint test test-rls db-up db-wait seed db-reset psql \
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
-        bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration
+        bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test
