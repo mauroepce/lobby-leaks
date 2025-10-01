@@ -7,10 +7,11 @@ A reusable boilerplate for creating new LobbyLeaks services with best practices 
 ## Features
 
 - **🔄 HTTP Client with Retries**: HTTPX-based client with exponential backoff and jitter
+- **🗄️ PostgreSQL Database**: SQLAlchemy 2.x with psycopg3 and upsert helpers
 - **⚙️ Configuration Management**: Pydantic Settings with .env support and validation
 - **📝 Structured Logging**: JSON logging with structlog and stdlib compatibility
 - **🖥️ CLI Interface**: Argparse-based command line interface
-- **🧪 Testing Ready**: 57 comprehensive tests (unit + integration)
+- **🧪 Testing Ready**: 75 comprehensive tests (unit + integration + database)
 - **🔒 Type Safety**: Full type hints and mypy compatibility
 
 ## Quick Start
@@ -34,6 +35,10 @@ httpx>=0.25.0
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 structlog>=23.0.0
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+sqlalchemy>=2.0.0
+psycopg[binary]>=3.1,<4.0
 ```
 
 ### 3. Configure Environment
@@ -99,6 +104,42 @@ python -m services.your-service-name.main --since 2025-01-01 --log-format text
 | `RATE_LIMIT_WINDOW` | `60` | Rate limit window in seconds |
 
 ## Architecture
+
+### Database Module (`db/`)
+
+- **Engine Management**: Production-ready PostgreSQL connections with SQLAlchemy 2.x
+- **Connection Pooling**: Automatic connection lifecycle with pre-ping and recycling
+- **Upsert Operations**: INSERT ... ON CONFLICT helpers for idempotent operations
+- **Multi-conflict Support**: Handle single columns, composite keys, or constraint names
+
+```python
+from services.your_service.db import get_engine, upsert
+from sqlalchemy import Table, MetaData, Column, Integer, String
+
+# Create engine with optimized defaults
+engine = get_engine("postgresql+psycopg://user:pass@localhost:5432/db")
+
+# Define table
+metadata = MetaData()
+users_table = Table('users', metadata,
+    Column('id', Integer, primary_key=True),
+    Column('name', String(100)),
+    Column('email', String(255), unique=True)
+)
+
+# Upsert operation
+stmt = upsert(
+    table=users_table,
+    conflict_keys="id",  # or ["col1", "col2"] or "constraint_name"
+    payload={"id": 1, "name": "John", "email": "john@example.com"},
+    update_cols=["name"]  # Optional: only update specific columns
+)
+
+# Execute upsert
+with engine.connect() as conn:
+    conn.execute(stmt)
+    conn.commit()
+```
 
 ### HTTP Client (`client.py`)
 
@@ -212,7 +253,7 @@ class CustomHTTPClient(HTTPClient):
 
 ## Testing
 
-The template includes **57 comprehensive tests** covering both unit testing (with mocks) and integration testing (with real functionality).
+The template includes **75 comprehensive tests** covering unit testing (with mocks), integration testing (with real functionality), and database testing (with PostgreSQL).
 
 ### Running Tests
 
@@ -226,8 +267,11 @@ make template-test-unit
 # Only integration tests (real functionality)
 make template-test-integration
 
+# Only database tests (requires PostgreSQL)
+make template-db-test
+
 # Run template tests as part of complete test suite
-make test-all         # lint + unit + template + MCP e2e
+make test-all         # lint + unit + template + RLS + MCP e2e (74 tests total)
 
 # Specific test files
 python -m pytest services/_template/tests/test_client.py -v
@@ -243,25 +287,22 @@ python -m pytest services/_template/tests/ --cov=services._template
 services/_template/
 ├── tests/
 │   ├── __init__.py
-│   ├── test_client.py          # HTTP client unit tests (35 tests)
-│   ├── test_main.py            # CLI and main logic tests (21 tests)
-│   └── test_integration.py     # Real functionality tests (17 tests)
+│   ├── test_client.py          # HTTP client unit tests (15 tests)
+│   ├── test_main.py            # CLI and main logic tests (25 tests)
+│   ├── test_integration.py     # Real functionality tests (17 tests)
+│   └── test_upsert.py          # Database upsert tests (18 tests)
 ```
 
 ### Test Categories
 
-#### 🧪 **Unit Tests** (56 tests)
-- **HTTP Client**: Retry logic, backoff calculation, error handling
-- **Settings**: Pydantic validation, field validation, helper methods
-- **CLI**: Argument parsing, date validation, record processing
-- **Main Logic**: Ingestion workflow, validation functions
+#### 🧪 **Unit Tests** (51 tests - no database required)
+- **HTTP Client** (15 tests): Retry logic, backoff calculation, error handling
+- **CLI & Main Logic** (25 tests): Argument parsing, date validation, ingestion workflow
+- **Database Statement Generation** (11 tests): SQL upsert generation, error handling (mocked)
 
-#### 🔗 **Integration Tests** (17 tests)
-- **Configuration**: Real `.env` loading, validation with actual values
-- **CLI Interface**: Subprocess calls to actual CLI commands
-- **Logging**: Import chain without circular dependencies
-- **HTTP Client**: Initialization with real settings
-- **End-to-End**: Complete import workflow verification
+#### 🔗 **Integration Tests** (24 tests - require PostgreSQL)
+- **Real Functionality** (17 tests): Configuration loading, CLI subprocess, HTTP client initialization
+- **Database Operations** (7 tests): Real PostgreSQL upsert, insert, update, conflict resolution, idempotency
 
 ### Writing Tests
 
@@ -286,6 +327,43 @@ def test_client_retry_on_500(mock_client):
 
     # Verify retries happened
     assert mock_client.return_value.request.call_count == 4  # 1 + 3 retries
+```
+
+Example database test:
+
+```python
+import pytest
+from sqlalchemy import MetaData, Table, Column, Integer, String
+from services._template.db import get_engine, upsert
+
+@pytest.mark.db
+class TestDatabaseOperations:
+    @pytest.fixture
+    def engine(self):
+        dsn = "postgresql+psycopg://user:pass@localhost:5432/testdb"
+        return get_engine(dsn)
+
+    @pytest.fixture
+    def test_table(self, engine):
+        metadata = MetaData()
+        table = Table('test_users', metadata,
+            Column('id', Integer, primary_key=True),
+            Column('name', String(100))
+        )
+        metadata.create_all(bind=engine)
+        yield table
+        metadata.drop_all(bind=engine)
+
+    def test_upsert_creates_new_record(self, engine, test_table):
+        stmt = upsert(test_table, "id", {"id": 1, "name": "John"})
+
+        with engine.connect() as conn:
+            conn.execute(stmt)
+            conn.commit()
+
+            # Verify record exists
+            result = conn.execute(select(test_table)).fetchone()
+            assert result.name == "John"
 ```
 
 ## Production Deployment
