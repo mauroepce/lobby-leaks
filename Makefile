@@ -21,6 +21,9 @@ install: .venv/bin/python ## instala deps Node + Python en .venv
 	pnpm install
 	$(PIP) install -r requirements.txt
 
+template-install: install ## instala deps Node + Python + template deps
+	$(PIP) install -r services/_template/requirements.txt
+
 lint: ## eslint
 	pnpm run lint
 
@@ -147,6 +150,9 @@ verify: bootstrap db-up db-wait lint test ## pipeline completo
 verify-clean: verify ## igual que verify, pero baja todo al final
 	$(MAKE) -s mcp-down
 
+test-all: lint test template-test ## ejecuta todos los tests (main + template)
+	$(MAKE) -s mcp-test-e2e
+
 # ========= Helpers del hub local =========
 mcp-install: .venv/bin/python
 	$(PIP) install -r services/mcp-hub/requirements.txt
@@ -164,8 +170,17 @@ mcp-test:
 	  kill $$SERVER_PID; \
 	)
 
+template-test: template-install ## run service template tests
+	$(PYTEST) -q services/_template/tests -v
+
+template-test-unit: template-install ## run only unit tests (mocked)
+	$(PYTEST) -q services/_template/tests -v -m "not integration"
+
+template-test-integration: template-install ## run only integration tests (real functionality)
+	$(PYTEST) -q services/_template/tests -v -m integration
+
 # ========= PHONY =========
 .PHONY: migrate seed db-up db-wait db-reset verify
-.PHONY: export-env install lint test test-rls db-up db-wait seed db-reset psql \
+.PHONY: export-env install template-install lint test test-rls db-up db-wait seed db-reset psql \
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
-        bootstrap quick verify verify-clean mcp-install mcp-test
+        bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration
