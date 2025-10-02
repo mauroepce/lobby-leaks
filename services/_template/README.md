@@ -8,10 +8,11 @@ A reusable boilerplate for creating new LobbyLeaks services with best practices 
 
 - **🔄 HTTP Client with Retries**: HTTPX-based client with exponential backoff and jitter
 - **🗄️ PostgreSQL Database**: SQLAlchemy 2.x with psycopg3 and upsert helpers
+- **🇨🇱 Data Normalization**: Chilean RUT validation (módulo 11) and name normalization
 - **⚙️ Configuration Management**: Pydantic Settings with .env support and validation
 - **📝 Structured Logging**: JSON logging with structlog and stdlib compatibility
 - **🖥️ CLI Interface**: Argparse-based command line interface
-- **🧪 Testing Ready**: 75 comprehensive tests (unit + integration + database)
+- **🧪 Testing Ready**: 186 comprehensive tests (unit + integration + database + helpers)
 - **🔒 Type Safety**: Full type hints and mypy compatibility
 
 ## Quick Start
@@ -141,6 +142,55 @@ with engine.connect() as conn:
     conn.commit()
 ```
 
+### Data Normalization Helpers (`helpers/`)
+
+Utilities for normalizing and validating Chilean data with pluggable adapter pattern.
+
+#### RUT (Chilean Tax ID) Validation
+
+```python
+from services.your_service.helpers import normalize_rut, validate_rut
+
+# Normalize RUT to canonical format
+rut = normalize_rut("12.345.678-5")  # Returns: "12345678-5"
+rut = normalize_rut("12345678-K")     # Returns: "12345678-K"
+rut = normalize_rut("invalid")        # Returns: None
+
+# Validate using Chilean módulo 11 algorithm
+is_valid = validate_rut("12.345.678-5")  # Returns: True
+is_valid = validate_rut("12.345.678-9")  # Returns: False (wrong DV)
+
+# Use in data processing
+for record in api.get_lobby_records():
+    clean_rut = normalize_rut(record['rut'])
+    if validate_rut(clean_rut):
+        # Process valid RUT
+        pass
+```
+
+#### Name Normalization
+
+```python
+from services.your_service.helpers import normalize_name
+
+# Remove honorifics and normalize
+name = normalize_name("Sr. JUAN PÉREZ")        # Returns: "Juan Pérez"
+name = normalize_name("Dip. María González")   # Returns: "María González"
+name = normalize_name("  José  López  ")       # Returns: "José López"
+
+# Handles Chilean-specific characters
+name = normalize_name("JOSÉ PEÑALOLÉN")        # Returns: "José Peñalolén"
+
+# Use in data cleaning
+for record in api.get_data():
+    clean_name = normalize_name(record['nombre'])
+    # Now consistent for storage and search
+```
+
+**Supported Honorifics:** sr/sra/srta, dr/dra, prof, ing, abog, dip/diputado, sen/senador, ministro, alcalde, concejal
+
+**Future:** Pluggable adapter allows integrating external libraries like `python-rut` without code changes.
+
 ### HTTP Client (`client.py`)
 
 - **Automatic Retries**: Retries on 5xx status codes and connection timeouts
@@ -253,7 +303,7 @@ class CustomHTTPClient(HTTPClient):
 
 ## Testing
 
-The template includes **75 comprehensive tests** covering unit testing (with mocks), integration testing (with real functionality), and database testing (with PostgreSQL).
+The template includes **186 comprehensive tests** covering unit testing (with mocks), integration testing (with real functionality), database testing (with PostgreSQL), and data normalization helpers.
 
 ### Running Tests
 
@@ -270,8 +320,11 @@ make template-test-integration
 # Only database tests (requires PostgreSQL)
 make template-db-test
 
+# Only helpers tests (RUT + name normalization)
+make template-helpers-test
+
 # Run template tests as part of complete test suite
-make test-all         # lint + unit + template + RLS + MCP e2e (74 tests total)
+make test-all         # lint + unit + template + RLS + MCP e2e (197 tests total)
 
 # Specific test files
 python -m pytest services/_template/tests/test_client.py -v
@@ -290,15 +343,19 @@ services/_template/
 │   ├── test_client.py          # HTTP client unit tests (15 tests)
 │   ├── test_main.py            # CLI and main logic tests (25 tests)
 │   ├── test_integration.py     # Real functionality tests (17 tests)
-│   └── test_upsert.py          # Database upsert tests (18 tests)
+│   ├── test_upsert.py          # Database upsert tests (18 tests)
+│   ├── test_rut.py             # RUT normalization/validation tests (52 tests)
+│   └── test_name.py            # Name normalization tests (59 tests)
 ```
 
 ### Test Categories
 
-#### 🧪 **Unit Tests** (51 tests - no database required)
+#### 🧪 **Unit Tests** (162 tests - no database required)
 - **HTTP Client** (15 tests): Retry logic, backoff calculation, error handling
 - **CLI & Main Logic** (25 tests): Argument parsing, date validation, ingestion workflow
 - **Database Statement Generation** (11 tests): SQL upsert generation, error handling (mocked)
+- **RUT Normalization/Validation** (52 tests): Chilean RUT módulo 11, formats, edge cases
+- **Name Normalization** (59 tests): Honorific removal, unicode, Chilean names
 
 #### 🔗 **Integration Tests** (24 tests - require PostgreSQL)
 - **Real Functionality** (17 tests): Configuration loading, CLI subprocess, HTTP client initialization
