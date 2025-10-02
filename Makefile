@@ -182,8 +182,11 @@ template-test-integration: template-install ## run only integration tests (real 
 template-db-test: template-install db-up db-wait ## run database-specific tests
 	$(PYTEST) -q services/_template/tests/test_upsert.py -v
 
+template-helpers-test: template-install ## run helpers (RUT, name) tests
+	$(PYTEST) -q services/_template/tests/test_rut.py services/_template/tests/test_name.py -v
+
 # ========= PHONY =========
 .PHONY: migrate seed db-up db-wait db-reset verify
 .PHONY: export-env install template-install lint test test-rls db-up db-wait seed db-reset psql \
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
-        bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test
+        bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test template-helpers-test
