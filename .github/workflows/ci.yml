@@ -45,8 +45,8 @@ jobs:
         run: make test
       - name: Install template dependencies
         run: pip install -r services/_template/requirements.txt
-      - name: Run template tests
-        run: make template-test
+      - name: Run template unit tests
+        run: make template-test-unit
 
   build-template:
     runs-on: ubuntu-latest
