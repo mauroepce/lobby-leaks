@@ -6,11 +6,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-        with: {version: 9}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
       - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: pnpm install
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pnpm install --frozen-lockfile
       - run: pip install -r requirements.txt
       - name: Run linter
         run: make lint
@@ -19,14 +27,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v2
-        with: {version: 9}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
       - uses: actions/setup-python@v5
-        with: {python-version: '3.12'}
-      - run: pnpm install
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - run: pnpm install --frozen-lockfile
       - run: pip install -r requirements.txt
-      - name: Run tests
+      - name: Run main tests
         run: make test
+      - name: Install template dependencies
+        run: pip install -r services/_template/requirements.txt
+      - name: Run template tests
+        run: make template-test
+
+  build-template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build template Docker image
+        run: docker build -t lobbyleaks-template services/_template
+      - name: Test Docker image runs
+        run: docker run --rm lobbyleaks-template --help
 
   mcp-e2e:
     runs-on: ubuntu-latest

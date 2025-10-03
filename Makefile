@@ -24,6 +24,8 @@ install: .venv/bin/python ## instala deps Node + Python en .venv
 template-install: install ## instala deps Node + Python + template deps
 	$(PIP) install -r services/_template/requirements.txt
 
+setup: install template-install ## instala todas las dependencias (Node + Python + template)
+
 lint: ## eslint
 	pnpm run lint
 
@@ -185,8 +187,22 @@ template-db-test: template-install db-up db-wait ## run database-specific tests
 template-helpers-test: template-install ## run helpers (RUT, name) tests
 	$(PYTEST) -q services/_template/tests/test_rut.py services/_template/tests/test_name.py -v
 
+# ========= Template Docker =========
+TEMPLATE_IMAGE ?= lobbyleaks-template
+
+build-template: ## build Docker image del template
+	@docker build -t $(TEMPLATE_IMAGE) services/_template
+
+run-template: build-template ## run template container con .env
+	@if [ ! -f .env ]; then \
+	  echo "❌ Archivo .env no encontrado. Copia .env.example a .env primero."; \
+	  exit 1; \
+	fi
+	@docker run --rm --env-file .env --network host $(TEMPLATE_IMAGE) --help
+
 # ========= PHONY =========
 .PHONY: migrate seed db-up db-wait db-reset verify
-.PHONY: export-env install template-install lint test test-rls db-up db-wait seed db-reset psql \
+.PHONY: export-env install template-install setup lint test test-rls db-up db-wait seed db-reset psql \
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
-        bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test template-helpers-test
+        bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test template-helpers-test \
+        build-template run-template

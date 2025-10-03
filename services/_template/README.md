@@ -423,6 +423,164 @@ class TestDatabaseOperations:
             assert result.name == "John"
 ```
 
+## Docker Deployment
+
+The template includes a production-ready multi-stage Dockerfile optimized for size and security.
+
+### Building the Image
+
+```bash
+# Build from the template directory
+cd services/_template
+docker build -t lobbyleaks-template .
+
+# Or build from project root
+docker build -t lobbyleaks-template -f services/_template/Dockerfile services/_template
+
+# Build with custom tag
+docker build -t my-service:v1.0.0 services/_template
+```
+
+### Running the Container
+
+#### Basic Usage
+
+```bash
+# Show help
+docker run --rm lobbyleaks-template
+
+# Run with arguments
+docker run --rm \
+  --env-file .env \
+  lobbyleaks-template --since 2025-01-01
+
+# With debug logging
+docker run --rm \
+  --env-file .env \
+  lobbyleaks-template --since 2025-01-01 --log-level DEBUG
+```
+
+#### With Database Connection
+
+When connecting to a PostgreSQL database, you need proper networking:
+
+```bash
+# Option 1: Connect to host database (development)
+docker run --rm \
+  --network host \
+  -e DB_DSN="postgresql://user:pass@localhost:5432/lobbyleaks" \
+  -e API_KEY="your_api_key" \
+  lobbyleaks-template --since 2025-01-01
+
+# Option 2: Connect to database in Docker network
+docker run --rm \
+  --network lobby-leaks_default \
+  -e DB_DSN="postgresql://lobbyleaks:l0bby@db:5432/lobbyleaks" \
+  -e API_KEY="your_api_key" \
+  lobbyleaks-template --since 2025-01-01
+
+# Option 3: Using docker-compose (recommended for production)
+# See docker-compose.yml example below
+```
+
+#### Environment Variables
+
+```bash
+# Pass individual environment variables
+docker run --rm \
+  -e API_KEY="sk-abc123" \
+  -e DB_DSN="postgresql://user:pass@localhost:5432/db" \
+  -e LOG_LEVEL="DEBUG" \
+  lobbyleaks-template --since 2025-01-01
+
+# Or use an env file
+docker run --rm --env-file .env lobbyleaks-template --since 2025-01-01
+```
+
+### Docker Compose Integration
+
+Create a `docker-compose.yml` for your service:
+
+```yaml
+version: '3.8'
+
+services:
+  your-service:
+    build: ./services/_template
+    image: lobbyleaks-template:latest
+    container_name: lobbyleaks-service
+    environment:
+      - API_KEY=${API_KEY}
+      - DB_DSN=postgresql://lobbyleaks:l0bby@db:5432/lobbyleaks
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - ENVIRONMENT=production
+    networks:
+      - lobby-leaks_default
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["--since", "2025-01-01"]
+
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=lobbyleaks
+      - POSTGRES_PASSWORD=l0bby
+      - POSTGRES_DB=lobbyleaks
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "lobbyleaks"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lobby-leaks_default
+
+networks:
+  lobby-leaks_default:
+    external: true
+```
+
+Run with docker-compose:
+
+```bash
+docker-compose up your-service
+```
+
+### Dockerfile Architecture
+
+The template uses a **multi-stage build** for optimal image size and security:
+
+#### Stage 1: Builder
+- Compiles Python packages with C extensions (psycopg, etc.)
+- Installs build tools (gcc, g++, libpq-dev)
+- Creates wheels for all dependencies
+
+#### Stage 2: Runtime
+- Minimal base image with only runtime dependencies
+- Non-root user (`appuser`) for security
+- Copies only compiled packages (no build tools)
+- Includes health check for container orchestration
+
+**Image Size**: ~200MB (vs ~500MB without multi-stage)
+
+### Makefile Shortcuts
+
+Use the root Makefile for convenient Docker operations:
+
+```bash
+# Build template image
+make build-template
+
+# Run template container
+make run-template
+
+# Complete setup (install all deps)
+make setup
+```
+
 ## Production Deployment
 
 ### Environment Configuration
@@ -438,19 +596,13 @@ API_TIMEOUT=60.0
 API_MAX_RETRIES=5
 ```
 
-### Docker Usage
+### Security Considerations
 
-```dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY services/your-service/ services/your-service/
-
-CMD ["python", "-m", "services.your-service.main", "--since", "2025-01-01"]
-```
+1. **Non-root User**: Container runs as `appuser` (not root)
+2. **No Secrets in Image**: Use `--env-file` or orchestrator secrets
+3. **Minimal Base**: `python:3.12-slim` reduces attack surface
+4. **Health Checks**: Built-in health check for orchestration
+5. **.dockerignore**: Prevents copying sensitive files (.env, .git, tests)
 
 ### Monitoring
 
