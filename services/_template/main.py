@@ -10,10 +10,18 @@ import asyncio
 import sys
 from datetime import datetime, date
 
-from . import __version__
-from .client import HTTPClient
-from .log_config import get_logger, log_api_call, log_processing_batch
-from .settings import settings
+# Support both package and standalone modes
+try:
+    from . import __version__
+    from .client import HTTPClient
+    from .log_config import get_logger, log_api_call, log_processing_batch
+    from .settings import settings
+except ImportError:
+    # Standalone mode (e.g., running directly or from Docker)
+    __version__ = "0.1.0"
+    from client import HTTPClient
+    from log_config import get_logger, log_api_call, log_processing_batch
+    from settings import settings
 
 
 logger = get_logger(__name__)
@@ -306,7 +314,10 @@ async def main() -> int:
 
     # Configure logging with CLI overrides
     if args.log_level or args.log_format:
-        from .logging import configure_logging
+        try:
+            from .log_config import configure_logging
+        except ImportError:
+            from log_config import configure_logging
         configure_logging(args.log_level, args.log_format)
 
     # Log startup information
