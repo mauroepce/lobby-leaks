@@ -25,7 +25,7 @@ class LobbyCollectorSettings(BaseSettings):
 
     # API Configuration
     lobby_api_base_url: str = Field(
-        default="https://api.leylobby.gob.cl/v1",
+        default="https://www.leylobby.gob.cl/api/v1",
         description="Base URL for Ley de Lobby API"
     )
 

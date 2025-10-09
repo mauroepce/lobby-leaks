@@ -153,11 +153,11 @@ class TestAuthentication:
 
             await fetch_page("/audiencias", {"page": 1})
 
-            # Verify Authorization header was included
+            # Verify Api-Key header was included
             call_args = mock_get.call_args
             headers = call_args.kwargs.get("headers", {})
-            assert "Authorization" in headers
-            assert headers["Authorization"].startswith("Bearer ")
+            assert "Api-Key" in headers
+            assert headers["Api-Key"] == "test-api-key"
 
     async def test_authentication_error_401(self):
         """Test handling of 401 authentication error."""

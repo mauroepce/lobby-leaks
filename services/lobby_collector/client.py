@@ -68,7 +68,7 @@ async def fetch_page(
 
     # Prepare headers with authentication
     headers = {
-        "Authorization": f"Bearer {config.lobby_api_key}",
+        "Api-Key": config.lobby_api_key,
         "Accept": "application/json",
         "User-Agent": f"{config.service_name}/{config.service_name}"
     }
