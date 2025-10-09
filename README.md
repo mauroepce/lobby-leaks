@@ -56,6 +56,26 @@ make template-test-integration  # Integration tests (real functionality)
 
 📖 **Full docs**: [services/_template/README.md](services/_template/README.md)
 
+### Lobby Collector
+Microservice for ingesting data from Chile's Ley de Lobby API (audiencias, viajes, donativos):
+
+- **Authentication**: Bearer token with API Key
+- **Pagination**: Automatic iteration with AsyncIterator
+- **Incremental updates**: Temporal windows (--since, --days)
+- **Resilience**: Exponential backoff retries + rate limiting
+- **Testing**: 23 comprehensive tests
+
+```bash
+# CLI usage
+python -m services.lobby_collector.main --days 7          # Last 7 days
+python -m services.lobby_collector.main --test-connection # Test API
+
+# Testing
+make lobby-collector-test  # Run all 23 tests
+```
+
+📖 **Full docs**: [services/lobby_collector/README.md](services/lobby_collector/README.md)
+
 ### MCP Hub
 Multi-tenant microservice for document processing and OCR (JSON-RPC 2.0 over HTTP).
 
@@ -111,6 +131,7 @@ lobby-leaks/
 ├── prisma/                # Database schema and migrations
 ├── services/
 │   ├── _template/         # Service boilerplate ⭐
+│   ├── lobby_collector/   # Ley de Lobby API ingestion
 │   └── mcp-hub/           # Document processing microservice
 └── tests/                 # Integration and security tests
 ```

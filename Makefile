@@ -187,6 +187,12 @@ template-db-test: template-install db-up db-wait ## run database-specific tests
 template-helpers-test: template-install ## run helpers (RUT, name) tests
 	$(PYTEST) -q services/_template/tests/test_rut.py services/_template/tests/test_name.py -v
 
+lobby-collector-install: .venv/bin/python ## install lobby collector dependencies
+	$(PIP) install -r services/lobby_collector/requirements.txt
+
+lobby-collector-test: lobby-collector-install ## run lobby collector tests
+	$(PYTEST) -q services/lobby_collector/tests -v
+
 # ========= Template Docker =========
 TEMPLATE_IMAGE ?= lobbyleaks-template
 
@@ -205,4 +211,4 @@ run-template: build-template ## run template container con .env
 .PHONY: export-env install template-install setup lint test test-rls db-up db-wait seed db-reset psql \
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
         bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test template-helpers-test \
-        build-template run-template
+        build-template run-template lobby-collector-install lobby-collector-test
