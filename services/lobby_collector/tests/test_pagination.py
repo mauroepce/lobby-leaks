@@ -9,7 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from datetime import datetime
 
-from services.lobby_collector.client import fetch_page, LobbyAPIAuthError, LobbyAPIRateLimitError
+from services.lobby_collector.client import fetch_page, LobbyAPIAuthError, LobbyAPIRateLimitError, LobbyApiDegraded
 from services.lobby_collector.ingest import fetch_since
 from services.lobby_collector.settings import LobbyCollectorSettings
 
@@ -160,7 +160,7 @@ class TestAuthentication:
             assert headers["Authorization"].startswith("Bearer ")
 
     async def test_authentication_error_401(self):
-        """Test handling of 401 authentication error."""
+        """Test handling of 401 authentication error (now raises LobbyApiDegraded)."""
         with patch("services.lobby_collector.client.httpx.AsyncClient") as mock_client:
             mock_response = AsyncMock()
             mock_response.status_code = 401
@@ -169,13 +169,14 @@ class TestAuthentication:
             mock_get = AsyncMock(return_value=mock_response)
             mock_client.return_value.__aenter__.return_value.get = mock_get
 
-            with pytest.raises(LobbyAPIAuthError) as exc_info:
+            with pytest.raises(LobbyApiDegraded) as exc_info:
                 await fetch_page("/audiencias", {"page": 1})
 
-            assert "401" in str(exc_info.value)
+            assert exc_info.value.status_code == 401
+            assert exc_info.value.reason == "HTTP_401"
 
     async def test_authentication_error_403(self):
-        """Test handling of 403 forbidden error."""
+        """Test handling of 403 forbidden error (now raises LobbyApiDegraded)."""
         with patch("services.lobby_collector.client.httpx.AsyncClient") as mock_client:
             mock_response = AsyncMock()
             mock_response.status_code = 403
@@ -184,10 +185,11 @@ class TestAuthentication:
             mock_get = AsyncMock(return_value=mock_response)
             mock_client.return_value.__aenter__.return_value.get = mock_get
 
-            with pytest.raises(LobbyAPIAuthError) as exc_info:
+            with pytest.raises(LobbyApiDegraded) as exc_info:
                 await fetch_page("/audiencias", {"page": 1})
 
-            assert "403" in str(exc_info.value)
+            assert exc_info.value.status_code == 403
+            assert exc_info.value.reason == "HTTP_403"
 
 
 class TestRateLimiting:
@@ -241,7 +243,7 @@ class TestRetries:
             assert mock_get.call_count == 3  # 1 initial + 2 retries
 
     async def test_retry_exhaustion(self):
-        """Test that max retries are exhausted on persistent failures."""
+        """Test that max retries are exhausted on persistent failures (now raises LobbyApiDegraded)."""
         import httpx
 
         with patch("services.lobby_collector.client.httpx.AsyncClient") as mock_client:
@@ -250,8 +252,12 @@ class TestRetries:
             mock_client.return_value.__aenter__.return_value.get = mock_get
 
             with patch("asyncio.sleep"):  # Mock sleep to speed up test
-                with pytest.raises(httpx.NetworkError):
+                with pytest.raises(LobbyApiDegraded) as exc_info:
                     await fetch_page("/audiencias", {"page": 1})
+
+            # Verify degraded exception details
+            assert exc_info.value.reason == "network_error"
+            assert exc_info.value.status_code is None
 
             # Should have tried: 1 initial + 3 retries = 4 total
             assert mock_get.call_count == 4

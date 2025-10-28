@@ -9,12 +9,13 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 from . import __version__
-from .client import test_connection
+from .client import test_connection, LobbyApiDegraded
 from .ingest import fetch_since, fetch_by_days, resolve_window
 from .settings import settings
 
@@ -25,6 +26,24 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def log_structured(level: str, **kwargs):
+    """Log structured JSON message with timestamp."""
+    log_data = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **kwargs
+    }
+    log_message = json.dumps(log_data)
+
+    if level == "INFO":
+        logger.info(log_message)
+    elif level == "WARNING":
+        logger.warning(log_message)
+    elif level == "ERROR":
+        logger.error(log_message)
+    elif level == "DEBUG":
+        logger.debug(log_message)
 
 
 def parse_args() -> argparse.Namespace:
@@ -196,6 +215,19 @@ async def run_ingestion(args: argparse.Namespace) -> int:
 
         return 0
 
+    except LobbyApiDegraded as e:
+        # API is degraded - log warning and exit gracefully
+        log_structured(
+            "WARNING",
+            service="lobby-collector",
+            status="degraded",
+            reason=e.reason,
+            status_code=e.status_code,
+            records_processed=0,
+            message="API degraded, no data ingested (exiting gracefully)"
+        )
+        return 0
+
     except Exception as e:
         logger.error(
             "Ingestion failed",
@@ -209,17 +241,39 @@ async def run_ingestion(args: argparse.Namespace) -> int:
 async def main() -> int:
     """Main entry point."""
     args = parse_args()
+    config = settings()
 
-    # Test connection mode
+    # Check if API is enabled (unless --test-connection which always runs)
+    if not config.enable_lobby_api and not args.test_connection:
+        log_structured(
+            "INFO",
+            service="lobby-collector",
+            mode="disabled",
+            message="Lobby API integration is disabled (ENABLE_LOBBY_API=false)"
+        )
+        return 0
+
+    # Test connection mode (ignores ENABLE_LOBBY_API flag)
     if args.test_connection:
         logger.info("Testing connection to Lobby API...")
-        success = await test_connection()
-        if success:
-            logger.info("✅ Connection test PASSED")
+        try:
+            success = await test_connection()
+            if success:
+                logger.info("✅ Connection test PASSED")
+                return 0
+            else:
+                logger.error("❌ Connection test FAILED")
+                return 1
+        except LobbyApiDegraded as e:
+            log_structured(
+                "WARNING",
+                service="lobby-collector",
+                status="degraded",
+                reason=e.reason,
+                status_code=e.status_code,
+                message="API is degraded but continuing gracefully"
+            )
             return 0
-        else:
-            logger.error("❌ Connection test FAILED")
-            return 1
 
     # Run ingestion
     return await run_ingestion(args)

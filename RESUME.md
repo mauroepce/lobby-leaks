@@ -25,7 +25,8 @@ lobby-leaks/
 │   └── backend/            # API principal (planificada)
 ├── services/               # Microservicios
 │   ├── _template/         # Plantilla reutilizable para servicios
-│   └── mcp-hub/           # Hub MCP (Model Context Protocol)
+│   ├── mcp-hub/           # Hub MCP (Model Context Protocol)
+│   └── lobby_collector/   # Colector de datos Ley de Lobby
 ├── clients/                # SDKs generados
 │   └── ts/                # Cliente TypeScript
 ├── docs/                   # Documentación
@@ -54,19 +55,32 @@ lobby-leaks/
 - **Testing**: 186 tests (unitarios + integración + BD + helpers) con pytest
 - **Documentación completa**: [Ver README](services/_template/README.md)
 
-#### 3. **MCP Hub (services/mcp-hub)**
+#### 3. **Lobby Collector (services/lobby_collector)**
+- **Framework**: HTTPX + Pydantic Settings
+- **Función**: Ingesta diaria de datos desde API Ley de Lobby de Chile
+- **Características**:
+  - Autenticación con Bearer Token (API Key)
+  - Paginación automática con AsyncIterator
+  - Ventanas temporales para actualizaciones incrementales
+  - Reintentos inteligentes con exponential backoff
+  - Rate limiting configurable
+  - CLI con argparse (--since, --days, --test-connection, --dry-run)
+- **Testing**: 23 tests (paginación, autenticación, rate limiting, reintentos, ventanas temporales)
+- **Documentación completa**: [Ver README](services/lobby_collector/README.md)
+
+#### 4. **MCP Hub (services/mcp-hub)**
 - **Framework**: FastAPI (Python 3.12+)
 - **Protocolo**: JSON-RPC 2.0 sobre HTTP en `/rpc2`
 - **Pool de conexiones**: psycopg3 con AsyncConnectionPool
 - **Middleware**: Manejo de multi-tenancy via `X-Tenant-Id` header
 - **Métodos stub**: `fetch_pdf`, `ocr_pdf`, `summarise_doc`, `entity_link`
 
-#### 4. **API RESTful**
+#### 5. **API RESTful**
 - **Especificación**: OpenAPI 3.1.0
 - **Endpoints**: Actualmente solo `/rpc2` (más endpoints planificados)
 - **Autenticación**: Sistema de tenants por headers
 
-#### 5. **SDK TypeScript**
+#### 6. **SDK TypeScript**
 - **Generación**: OpenAPI Generator (typescript-fetch)
 - **Ubicación**: `clients/ts/`
 - **Regeneración**: `pnpm run gen-sdk`
@@ -171,6 +185,9 @@ make template-helpers-test # Solo tests de helpers (RUT + nombres)
 make mcp-test-e2e        # Tests end-to-end del hub
 make mcp-curl            # Verificación manual
 
+# Lobby Collector
+make lobby-collector-test # Tests del colector (23 tests)
+
 # SDK
 pnpm run gen-sdk         # Regenerar cliente TypeScript
 ```
@@ -195,12 +212,20 @@ La arquitectura está diseñada para escalar globalmente:
 - Template de servicios con conector PostgreSQL
 - SQLAlchemy 2.x + upsert helpers para servicios
 - Helpers de normalización (RUT chileno + nombres)
+- **Lobby Collector con autenticación, paginación y ventanas temporales**
+- **Lobby Collector con modo degradado y fallback (graceful degradation)**
+  - Feature flag `ENABLE_LOBBY_API` para deshabilitar integración
+  - Manejo de errores 401/5xx/timeout sin romper pipeline
+  - Logs estructurados JSON con timestamps
+  - Exit code 0 en modo degradado (no rompe cron/CI)
+  - 33 tests comprehensivos (paginación + fallback)
 - Pipeline CI/CD básico
 - Documentación técnica
 
 ### 🚧 En Desarrollo
 - Implementación real de métodos MCP
-- Conectores para APIs chilenas
+- **Guardado de datos de Lobby Collector en PostgreSQL**
+- **Normalización de datos chilenos (RUT, regiones)**
 - Interfaz web
 - Sistema de alertas
 
