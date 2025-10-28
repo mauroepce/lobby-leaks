@@ -25,12 +25,19 @@ class LobbyCollectorSettings(BaseSettings):
 
     # API Configuration
     lobby_api_base_url: str = Field(
-        default="https://api.leylobby.gob.cl/v1",
+        default="https://www.leylobby.gob.cl/api/v1",
         description="Base URL for Ley de Lobby API"
     )
 
     lobby_api_key: str = Field(
+        default="",
         description="API key for authentication with Ley de Lobby API"
+    )
+
+    # Feature Flags
+    enable_lobby_api: bool = Field(
+        default=False,
+        description="Enable Lobby API integration (false = disabled mode)"
     )
 
     # Pagination Configuration

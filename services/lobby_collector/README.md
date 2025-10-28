@@ -26,8 +26,9 @@ Crea un archivo `.env` en la raíz del proyecto con las siguientes variables:
 
 | Variable | Descripción | Valor por defecto | Requerido |
 |----------|-------------|-------------------|-----------|
-| `LOBBY_API_BASE_URL` | URL base de la API | `https://api.leylobby.gob.cl/v1` | No |
-| `LOBBY_API_KEY` | API Key para autenticación | - | **Sí** |
+| `ENABLE_LOBBY_API` | Habilitar integración con API | `false` | No |
+| `LOBBY_API_BASE_URL` | URL base de la API | `https://www.leylobby.gob.cl/api/v1` | No |
+| `LOBBY_API_KEY` | API Key para autenticación | - | **Sí** (si enabled) |
 | `PAGE_SIZE` | Registros por página (1-1000) | `100` | No |
 | `DEFAULT_SINCE_DAYS` | Días hacia atrás por defecto | `7` | No |
 | `API_TIMEOUT` | Timeout de requests (segundos) | `30.0` | No |
@@ -37,11 +38,68 @@ Crea un archivo `.env` en la raíz del proyecto con las siguientes variables:
 | `LOG_FORMAT` | Formato de logs (`json` o `text`) | `json` | No |
 | `SERVICE_NAME` | Nombre del servicio | `lobby-collector` | No |
 
+### Modo Degradado y Fallback
+
+El servicio implementa **graceful degradation** para manejar situaciones donde la API no está disponible:
+
+#### 🔴 Modo Deshabilitado (`ENABLE_LOBBY_API=false`)
+
+Cuando `ENABLE_LOBBY_API=false`, el servicio:
+- ✅ No realiza requests a la API
+- ✅ Loggea mensaje informativo en JSON estructurado
+- ✅ Termina con exit code 0 (éxito)
+- ✅ No rompe cron jobs ni pipelines CI/CD
+
+```json
+{
+  "timestamp": "2025-10-10T14:00:00Z",
+  "service": "lobby-collector",
+  "mode": "disabled",
+  "message": "Lobby API integration is disabled"
+}
+```
+
+**Cuándo usar**: Mientras no tengas acceso aprobado a la API oficial.
+
+#### ⚠️ Modo Degradado (API caída/401/5xx)
+
+Si `ENABLE_LOBBY_API=true` pero la API falla (401, 5xx, timeout), el servicio:
+- ✅ No inserta datos en base de datos
+- ✅ Loggea warning en JSON estructurado
+- ✅ Termina con exit code 0 (no falla)
+- ✅ Permite que el sistema continúe operando
+
+```json
+{
+  "timestamp": "2025-10-10T14:00:00Z",
+  "service": "lobby-collector",
+  "status": "degraded",
+  "reason": "HTTP_401",
+  "status_code": 401,
+  "records_processed": 0,
+  "message": "API degraded, no data ingested (exiting gracefully)"
+}
+```
+
+**Errores que activan degraded mode**:
+- `HTTP_401` / `HTTP_403`: Autenticación rechazada
+- `HTTP_500+`: Errores de servidor (después de reintentos)
+- `timeout`: Timeout de red (después de reintentos)
+- `network_error`: Errores de red (después de reintentos)
+
+**Excepción**: `--test-connection` siempre se ejecuta, incluso con `ENABLE_LOBBY_API=false`
+
 ### Ejemplo `.env`
 
 ```bash
-LOBBY_API_BASE_URL=https://api.leylobby.gob.cl/v1
-LOBBY_API_KEY=tu_api_key_aqui
+# Deshabilitar API mientras no tengas acceso
+ENABLE_LOBBY_API=false
+
+# Configurar cuando tengas acceso aprobado
+# ENABLE_LOBBY_API=true
+# LOBBY_API_KEY=tu_api_key_aqui
+
+LOBBY_API_BASE_URL=https://www.leylobby.gob.cl/api/v1
 PAGE_SIZE=100
 DEFAULT_SINCE_DAYS=7
 LOG_LEVEL=INFO

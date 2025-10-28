@@ -32,6 +32,19 @@ class LobbyAPIRateLimitError(LobbyAPIError):
     pass
 
 
+class LobbyApiDegraded(LobbyAPIError):
+    """
+    API is degraded or unavailable (401/5xx/timeout).
+
+    This is a non-fatal error that indicates the service should
+    continue gracefully without crashing.
+    """
+    def __init__(self, reason: str, status_code: int | None = None):
+        self.reason = reason
+        self.status_code = status_code
+        super().__init__(f"API degraded: {reason}")
+
+
 async def fetch_page(
     endpoint: str,
     params: dict[str, Any] | None = None,
@@ -85,10 +98,11 @@ async def fetch_page(
         async with httpx.AsyncClient(timeout=config.api_timeout) as client:
             response = await client.get(url, params=params, headers=headers)
 
-            # Handle authentication errors
+            # Handle authentication errors - raise LobbyApiDegraded for graceful degradation
             if response.status_code in (401, 403):
-                raise LobbyAPIAuthError(
-                    f"Authentication failed: {response.status_code} - {response.text}"
+                raise LobbyApiDegraded(
+                    reason=f"HTTP_{response.status_code}",
+                    status_code=response.status_code
                 )
 
             # Handle rate limiting
@@ -113,10 +127,9 @@ async def fetch_page(
             await asyncio.sleep(2 ** retry_count)
             return await fetch_page(endpoint, params, retry_count=retry_count + 1)
         else:
-            logger.error(
-                f"Max retries exceeded: error={str(e)}, max_retries={config.api_max_retries}"
-            )
-            raise
+            # Max retries exceeded - degrade gracefully
+            error_type = "timeout" if isinstance(e, httpx.TimeoutException) else "network_error"
+            raise LobbyApiDegraded(reason=error_type, status_code=None)
 
     except httpx.HTTPStatusError as e:
         # Retry on server errors (5xx)
@@ -126,7 +139,14 @@ async def fetch_page(
             )
             await asyncio.sleep(2 ** retry_count)
             return await fetch_page(endpoint, params, retry_count=retry_count + 1)
+        elif e.response.status_code >= 500:
+            # 5xx error after retries - degrade gracefully
+            raise LobbyApiDegraded(
+                reason=f"HTTP_{e.response.status_code}",
+                status_code=e.response.status_code
+            )
         else:
+            # Other HTTP errors (4xx except 401/403) - raise as error
             raise LobbyAPIError(f"HTTP {e.response.status_code}: {e.response.text}")
 
 
@@ -136,12 +156,18 @@ async def test_connection() -> bool:
 
     Returns:
         True if connection successful, False otherwise
+
+    Raises:
+        LobbyApiDegraded: If API is degraded (re-raised for graceful handling)
     """
     try:
         # Try to fetch first page with minimal params
         result = await fetch_page("/audiencias", {"page": 1, "page_size": 1})
         logger.info(f"Connection test successful: has_data={bool(result.get('data'))}")
         return True
+    except LobbyApiDegraded:
+        # Re-raise degraded exception for graceful handling
+        raise
     except Exception as e:
         logger.error(f"Connection test failed: error={str(e)}, error_type={type(e).__name__}")
         return False
