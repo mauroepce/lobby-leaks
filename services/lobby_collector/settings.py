@@ -91,6 +91,12 @@ class LobbyCollectorSettings(BaseSettings):
         description="Service name for logging and monitoring"
     )
 
+    # Database Configuration
+    database_url: str = Field(
+        default="",
+        description="PostgreSQL connection string (e.g., postgresql://user:pass@host:port/db)"
+    )
+
 
 @lru_cache()
 def get_settings() -> LobbyCollectorSettings:

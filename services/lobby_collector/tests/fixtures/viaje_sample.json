@@ -1,0 +1,68 @@
+{
+  "nombres": "Carolina",
+  "apellidos": "Tohá Morales",
+  "cargo": "Ministra del Interior y Seguridad Pública",
+  "destino": "París, Francia",
+  "categoria": "Internacional",
+  "objeto": "Participación en conferencia sobre seguridad ciudadana",
+  "fecha_inicio": "2025-02-10",
+  "fecha_termino": "2025-02-15",
+  "valor": 2500000,
+  "moneda": "CLP",
+  "sujeto_pasivo_url": "https://www.leylobby.gob.cl/api/v1/sujetos-pasivos/789",
+  "institucion_url": "https://www.leylobby.gob.cl/api/v1/instituciones/INT001",
+  "institucion": {
+    "codigo": "INT001",
+    "nombre": "Ministerio del Interior y Seguridad Pública"
+  },
+  "desglose": [
+    {
+      "titulo": "Pasaje aéreo",
+      "valor": 1500000,
+      "moneda": "CLP",
+      "tipo": "Transporte",
+      "financista": {
+        "nombre": "Fundación para la Seguridad Internacional",
+        "pais": "Francia",
+        "giro": "Fundación sin fines de lucro",
+        "actividades": "Investigación y promoción de políticas de seguridad",
+        "domicilio": "12 Rue de la Paix, París",
+        "representante_legal": "Jean-Pierre Dubois",
+        "naturaleza": "Fundación",
+        "directorio": null
+      }
+    },
+    {
+      "titulo": "Alojamiento",
+      "valor": 800000,
+      "moneda": "CLP",
+      "tipo": "Hospedaje",
+      "financista": {
+        "nombre": "Fundación para la Seguridad Internacional",
+        "pais": "Francia",
+        "giro": "Fundación sin fines de lucro",
+        "actividades": "Investigación y promoción de políticas de seguridad",
+        "domicilio": "12 Rue de la Paix, París",
+        "representante_legal": "Jean-Pierre Dubois",
+        "naturaleza": "Fundación",
+        "directorio": null
+      }
+    },
+    {
+      "titulo": "Alimentación",
+      "valor": 200000,
+      "moneda": "CLP",
+      "tipo": "Alimentación",
+      "financista": {
+        "nombre": "Fundación para la Seguridad Internacional",
+        "pais": "Francia",
+        "giro": "Fundación sin fines de lucro",
+        "actividades": "Investigación y promoción de políticas de seguridad",
+        "domicilio": "12 Rue de la Paix, París",
+        "representante_legal": "Jean-Pierre Dubois",
+        "naturaleza": "Fundación",
+        "directorio": null
+      }
+    }
+  ]
+}

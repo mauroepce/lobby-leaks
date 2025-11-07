@@ -61,3 +61,21 @@ model Leak {
 
   @@index([tenantCode])
 }
+
+model LobbyEventRaw {
+  id          String   @id @default(uuid())
+  externalId  String   @unique
+  tenantCode  String
+  kind        String // 'audiencia' | 'viaje' | 'donativo'
+  rawData     Json
+  fecha       DateTime?
+  monto       Decimal?
+  institucion String?
+  destino     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantCode])
+  @@index([externalId])
+  @@index([kind, fecha(sort: Desc)])
+}

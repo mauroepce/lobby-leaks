@@ -1,0 +1,29 @@
+{
+  "nombres": "Mario",
+  "apellidos": "Marcel Cullell",
+  "cargo": "Ministro de Hacienda",
+  "referencia": "Discusión sobre Proyecto de Ley de Presupuesto 2025",
+  "forma": "P",
+  "lugar": "Ministerio de Hacienda, Teatinos 120, Santiago",
+  "comuna": "Santiago",
+  "fecha_inicio": "2025-01-15 10:00:00",
+  "fecha_termino": "2025-01-15 11:30:00",
+  "sujeto_pasivo_url": "https://www.leylobby.gob.cl/api/v1/sujetos-pasivos/123",
+  "institucion_url": "https://www.leylobby.gob.cl/api/v1/instituciones/HAC001",
+  "asistentes": [
+    {
+      "nombres": "Juan Carlos",
+      "apellidos": "Pérez González",
+      "cargo_activo_url": "https://www.leylobby.gob.cl/api/v1/cargos-activos/456",
+      "representa": {
+        "nombre": "Asociación de Bancos de Chile",
+        "tipo": "Persona Jurídica",
+        "giro": "Asociación Gremial",
+        "domicilio": "Bandera 140, Santiago",
+        "representante_legal": "José Ramírez",
+        "naturaleza": "Asociación",
+        "directorio": "José Ramírez (Presidente), María López (Secretaria)"
+      }
+    }
+  ]
+}

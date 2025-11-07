@@ -1,0 +1,26 @@
+{
+  "nombres": "Rodrigo",
+  "apellidos": "Delgado Mocarquer",
+  "cargo": "Diputado",
+  "ocasion": "Ceremonia de aniversario institucional",
+  "descripcion": "Canasta de productos gourmet",
+  "fecha": "2025-01-20",
+  "sujeto_pasivo_url": "https://www.leylobby.gob.cl/api/v1/sujetos-pasivos/456",
+  "institucion_url": "https://www.leylobby.gob.cl/api/v1/instituciones/CAM001",
+  "institucion": {
+    "codigo": "CAM001",
+    "nombre": "Cámara de Diputados"
+  },
+  "donantes": [
+    {
+      "nombre": "Federación de Productores de Fruta de Chile",
+      "tipo": "Persona Jurídica",
+      "giro": "Asociación Gremial",
+      "actividades": "Representación y defensa de intereses de productores frutícolas",
+      "domicilio": "Santa Beatriz 120, Providencia",
+      "representante_legal": "Carlos Rojas",
+      "naturaleza": "Asociación",
+      "directorio": null
+    }
+  ]
+}
