@@ -7,19 +7,23 @@ time windows for incremental updates.
 
 import logging
 from datetime import datetime, timedelta
-from typing import AsyncIterator, Any
+from typing import AsyncIterator, Any, Optional, Dict, List
+
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 
 from .client import fetch_page
 from .settings import settings
+from .persistence import upsert_raw_event
 
 
 logger = logging.getLogger(__name__)
 
 
 def resolve_window(
-    now: datetime | None = None,
-    days: int | None = None
-) -> tuple[datetime, datetime]:
+    now: Optional[datetime] = None,
+    days: Optional[int] = None
+) -> tuple:
     """
     Calculate time window for data ingestion.
 
@@ -54,9 +58,9 @@ def resolve_window(
 
 async def fetch_since(
     since: datetime,
-    until: datetime | None = None,
+    until: Optional[datetime] = None,
     endpoint: str = "/audiencias"
-) -> AsyncIterator[dict[str, Any]]:
+) -> AsyncIterator[Dict[str, Any]]:
     """
     Fetch all records from API since a given date, handling pagination automatically.
 
@@ -135,7 +139,7 @@ async def fetch_since(
 async def fetch_by_days(
     days: int,
     endpoint: str = "/audiencias"
-) -> AsyncIterator[dict[str, Any]]:
+) -> AsyncIterator[Dict[str, Any]]:
     """
     Convenience function to fetch records from the last N days.
 
@@ -158,7 +162,7 @@ async def fetch_by_days(
 
 async def count_records(
     since: datetime,
-    until: datetime | None = None,
+    until: Optional[datetime] = None,
     endpoint: str = "/audiencias"
 ) -> int:
     """
@@ -182,3 +186,148 @@ async def count_records(
     async for _ in fetch_since(since, until, endpoint):
         count += 1
     return count
+
+
+def get_engine() -> Engine:
+    """
+    Get or create database engine.
+
+    Returns:
+        SQLAlchemy Engine instance
+
+    Raises:
+        ValueError: If DATABASE_URL is not configured
+    """
+    config = settings()
+
+    if not config.database_url:
+        raise ValueError(
+            "DATABASE_URL is not configured. Set it in .env or environment variables."
+        )
+
+    return create_engine(
+        config.database_url,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
+
+
+async def ingest_audiencias(
+    records: List[Dict[str, Any]],
+    tenant_code: str = "CL",
+    engine: Optional[Engine] = None
+) -> int:
+    """
+    Ingest audiencias records into database.
+
+    Args:
+        records: List of audiencia records (from API or fixtures)
+        tenant_code: Tenant identifier (default: 'CL')
+        engine: SQLAlchemy engine (creates new if None)
+
+    Returns:
+        Number of records successfully processed
+
+    Example:
+        >>> records = [load_fixture("audiencia_sample.json")]
+        >>> count = await ingest_audiencias(records)
+        >>> print(f"Processed {count} audiencias")
+    """
+    if engine is None:
+        engine = get_engine()
+
+    processed = 0
+
+    for record in records:
+        try:
+            await upsert_raw_event(engine, record, kind="audiencia", tenant_code=tenant_code)
+            processed += 1
+        except Exception as e:
+            logger.error(
+                f"Failed to ingest audiencia: error={str(e)}, record_preview={str(record)[:100]}"
+            )
+            # Continue processing other records (graceful degradation)
+            continue
+
+    logger.info(f"Ingested {processed}/{len(records)} audiencias")
+    return processed
+
+
+async def ingest_viajes(
+    records: List[Dict[str, Any]],
+    tenant_code: str = "CL",
+    engine: Optional[Engine] = None
+) -> int:
+    """
+    Ingest viajes records into database.
+
+    Args:
+        records: List of viaje records (from API or fixtures)
+        tenant_code: Tenant identifier (default: 'CL')
+        engine: SQLAlchemy engine (creates new if None)
+
+    Returns:
+        Number of records successfully processed
+
+    Example:
+        >>> records = [load_fixture("viaje_sample.json")]
+        >>> count = await ingest_viajes(records)
+        >>> print(f"Processed {count} viajes")
+    """
+    if engine is None:
+        engine = get_engine()
+
+    processed = 0
+
+    for record in records:
+        try:
+            await upsert_raw_event(engine, record, kind="viaje", tenant_code=tenant_code)
+            processed += 1
+        except Exception as e:
+            logger.error(
+                f"Failed to ingest viaje: error={str(e)}, record_preview={str(record)[:100]}"
+            )
+            continue
+
+    logger.info(f"Ingested {processed}/{len(records)} viajes")
+    return processed
+
+
+async def ingest_donativos(
+    records: List[Dict[str, Any]],
+    tenant_code: str = "CL",
+    engine: Optional[Engine] = None
+) -> int:
+    """
+    Ingest donativos records into database.
+
+    Args:
+        records: List of donativo records (from API or fixtures)
+        tenant_code: Tenant identifier (default: 'CL')
+        engine: SQLAlchemy engine (creates new if None)
+
+    Returns:
+        Number of records successfully processed
+
+    Example:
+        >>> records = [load_fixture("donativo_sample.json")]
+        >>> count = await ingest_donativos(records)
+        >>> print(f"Processed {count} donativos")
+    """
+    if engine is None:
+        engine = get_engine()
+
+    processed = 0
+
+    for record in records:
+        try:
+            await upsert_raw_event(engine, record, kind="donativo", tenant_code=tenant_code)
+            processed += 1
+        except Exception as e:
+            logger.error(
+                f"Failed to ingest donativo: error={str(e)}, record_preview={str(record)[:100]}"
+            )
+            continue
+
+    logger.info(f"Ingested {processed}/{len(records)} donativos")
+    return processed

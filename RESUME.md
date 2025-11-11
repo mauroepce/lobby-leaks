@@ -45,6 +45,10 @@ lobby-leaks/
   - `Document`: Documentos subidos por usuarios
   - `FundingRecord`: Registros de financiamiento
   - `Leak`: Filtraciones publicadas
+  - **`LobbyEventRaw`**: Tabla unificada para eventos de lobby (audiencias, viajes, donativos)
+    - Almacenamiento RAW (JSONB) para event sourcing
+    - Campos derivados indexados para queries eficientes
+    - Upsert idempotente por `externalId`
 
 #### 2. **Plantilla de Servicios (services/_template)**
 - **Framework**: HTTPX + Pydantic + Structlog
@@ -56,16 +60,21 @@ lobby-leaks/
 - **Documentación completa**: [Ver README](services/_template/README.md)
 
 #### 3. **Lobby Collector (services/lobby_collector)**
-- **Framework**: HTTPX + Pydantic Settings
-- **Función**: Ingesta diaria de datos desde API Ley de Lobby de Chile
+- **Framework**: HTTPX + Pydantic Settings + SQLAlchemy 2.x
+- **Función**: Ingesta diaria de datos desde API Ley de Lobby de Chile con persistencia RAW
 - **Características**:
   - Autenticación con Bearer Token (API Key)
   - Paginación automática con AsyncIterator
   - Ventanas temporales para actualizaciones incrementales
   - Reintentos inteligentes con exponential backoff
   - Rate limiting configurable
+  - **Persistencia RAW en tabla unificada** (audiencias, viajes, donativos)
+  - **Event Sourcing Lite**: JSON completo en `rawData` (JSONB)
+  - **Upsert idempotente**: INSERT ON CONFLICT por `externalId`
+  - **Campos derivados**: fecha, monto, institucion, destino (best-effort)
+  - **IDs deterministas**: generados desde (kind, nombres, apellidos, fecha)
   - CLI con argparse (--since, --days, --test-connection, --dry-run)
-- **Testing**: 23 tests (paginación, autenticación, rate limiting, reintentos, ventanas temporales)
+- **Testing**: 56 tests (paginación + fallback + derivers + persistencia DB)
 - **Documentación completa**: [Ver README](services/lobby_collector/README.md)
 
 #### 4. **MCP Hub (services/mcp-hub)**
@@ -218,13 +227,20 @@ La arquitectura está diseñada para escalar globalmente:
   - Manejo de errores 401/5xx/timeout sin romper pipeline
   - Logs estructurados JSON con timestamps
   - Exit code 0 en modo degradado (no rompe cron/CI)
-  - 33 tests comprehensivos (paginación + fallback)
+- **Lobby Collector con persistencia RAW unificada (E1.1-S2)**
+  - Tabla `LobbyEventRaw` para audiencias, viajes y donativos
+  - Event Sourcing Lite: JSON completo en `rawData` (JSONB)
+  - Upsert idempotente por `externalId` determinista
+  - Módulo `derivers.py` para extracción de campos (fecha, monto, institucion, destino)
+  - Módulo `persistence.py` con función `upsert_raw_event()`
+  - Funciones de ingesta: `ingest_audiencias()`, `ingest_viajes()`, `ingest_donativos()`
+  - Fixtures JSON realistas basados en API documentation
+  - 56 tests totales (23 nuevos: derivers + persistencia DB)
 - Pipeline CI/CD básico
 - Documentación técnica
 
 ### 🚧 En Desarrollo
 - Implementación real de métodos MCP
-- **Guardado de datos de Lobby Collector en PostgreSQL**
 - **Normalización de datos chilenos (RUT, regiones)**
 - Interfaz web
 - Sistema de alertas

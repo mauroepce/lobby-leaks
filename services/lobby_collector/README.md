@@ -103,7 +103,140 @@ LOBBY_API_BASE_URL=https://www.leylobby.gob.cl/api/v1
 PAGE_SIZE=100
 DEFAULT_SINCE_DAYS=7
 LOG_LEVEL=INFO
+
+# Database connection (required for persistence)
+DATABASE_URL=postgresql://postgres:password@localhost:5432/lobbyleaks
 ```
+
+## Persistencia RAW (Unified Table)
+
+El servicio ahora persiste **todos los endpoints** (audiencias, viajes, donativos) en una **tabla unificada** `LobbyEventRaw` con estrategia de upsert idempotente.
+
+### ¿Por qué tabla unificada?
+
+1. **Simplicidad**: Un solo esquema para todos los tipos de eventos de lobby
+2. **Flexibilidad**: El campo `rawData` (JSONB) almacena el JSON completo sin pérdida de información
+3. **Event Sourcing Lite**: Puedes reprocesar datos históricos cuando mejores la normalización
+4. **Escalabilidad**: Agregar nuevos tipos de eventos no requiere nuevas tablas
+
+### Esquema de la Tabla
+
+```sql
+CREATE TABLE "LobbyEventRaw" (
+    id          UUID PRIMARY KEY,
+    externalId  TEXT UNIQUE NOT NULL,    -- ID derivado de (kind, nombres, apellidos, fecha)
+    tenantCode  TEXT NOT NULL,           -- 'CL', 'UY', etc.
+    kind        TEXT NOT NULL,           -- 'audiencia' | 'viaje' | 'donativo'
+    rawData     JSONB NOT NULL,          -- JSON completo del registro
+
+    -- Campos derivados (best-effort, para queries eficientes)
+    fecha       TIMESTAMPTZ,             -- Fecha principal del evento
+    monto       NUMERIC,                 -- Monto (solo donativos, si aplica)
+    institucion TEXT,                    -- Institución involucrada
+    destino     TEXT,                    -- Destino (solo viajes)
+
+    createdAt   TIMESTAMPTZ DEFAULT now(),
+    updatedAt   TIMESTAMPTZ DEFAULT now()
+);
+
+-- Índices
+CREATE UNIQUE INDEX ON "LobbyEventRaw"(externalId);
+CREATE INDEX ON "LobbyEventRaw"(tenantCode);
+CREATE INDEX ON "LobbyEventRaw"(kind, fecha DESC);
+```
+
+### Derivación de Campos
+
+Los campos mínimos se derivan automáticamente del JSON con **fallbacks robustos**:
+
+#### `externalId` (Determinista)
+
+Como la API de Ley de Lobby no proporciona IDs únicos, generamos IDs deterministas:
+
+```python
+# Formato: kind:nombres_apellidos_fecha
+# Ejemplo: "audiencia:mario_marcel_2025-01-15"
+```
+
+Si faltan campos, se usa hash SHA256 del registro completo.
+
+#### `fecha` (Best-effort)
+
+Mapeo por tipo de evento:
+
+- **Audiencia**: `fecha_inicio` → `fecha` → `created_at`
+- **Viaje**: `fecha_inicio` → `fecha_salida` → `fecha`
+- **Donativo**: `fecha` → `fecha_donacion` → `created_at`
+
+#### `monto` (Solo donativos)
+
+No disponible en la API actual. Campo preparado para futuros cambios.
+
+#### `institucion` (Best-effort)
+
+- **Audiencia**: `sujeto_pasivo` → `institucion` → `nombre_institucion`
+- **Viaje**: `institucion.nombre` → `institucion_destino`
+- **Donativo**: `institucion.nombre` → `donantes[0].nombre`
+
+#### `destino` (Solo viajes)
+
+- **Viaje**: `destino` → `ciudad_destino` → `pais_destino`
+
+### Upsert Idempotente
+
+La inserción usa `INSERT ... ON CONFLICT(externalId) DO UPDATE`:
+
+```python
+await upsert_raw_event(engine, record, kind="audiencia", tenant_code="CL")
+```
+
+**Comportamiento**:
+- Si `externalId` no existe → **INSERT** nuevo registro
+- Si `externalId` existe → **UPDATE** `rawData` y campos derivados, actualiza `updatedAt`
+
+Esto permite:
+- Re-ingestar datos sin duplicados
+- Actualizar registros si la API los modifica
+- Correr el ingesta múltiples veces de forma segura
+
+### Uso con Fixtures (Sin API)
+
+Mientras no tengas acceso a la API (`ENABLE_LOBBY_API=false`), puedes usar fixtures locales:
+
+```python
+import json
+from services.lobby_collector.ingest import ingest_audiencias
+
+# Cargar fixture local
+with open("services/lobby_collector/tests/fixtures/audiencia_sample.json") as f:
+    record = json.load(f)
+
+# Ingestar en base de datos
+count = await ingest_audiencias([record], tenant_code="CL")
+print(f"Procesados: {count} audiencias")
+```
+
+**Fixtures disponibles**:
+- `audiencia_sample.json`: Audiencia Ministro de Hacienda
+- `viaje_sample.json`: Viaje Ministra del Interior a París
+- `donativo_sample.json`: Donativo a Diputado
+
+### Funciones de Ingesta
+
+Tres funciones para cada tipo de evento:
+
+```python
+# Ingestar audiencias
+count = await ingest_audiencias(records, tenant_code="CL")
+
+# Ingestar viajes
+count = await ingest_viajes(records, tenant_code="CL")
+
+# Ingestar donativos
+count = await ingest_donativos(records, tenant_code="CL")
+```
+
+Todas implementan **graceful degradation**: si un registro falla, continúan con los siguientes.
 
 ## Uso
 

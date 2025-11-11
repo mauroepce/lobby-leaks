@@ -6,7 +6,7 @@ Handles authentication, retries, rate limiting, and error handling.
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Optional, Dict
 from datetime import datetime
 
 import httpx
@@ -39,7 +39,7 @@ class LobbyApiDegraded(LobbyAPIError):
     This is a non-fatal error that indicates the service should
     continue gracefully without crashing.
     """
-    def __init__(self, reason: str, status_code: int | None = None):
+    def __init__(self, reason: str, status_code: Optional[int] = None):
         self.reason = reason
         self.status_code = status_code
         super().__init__(f"API degraded: {reason}")
@@ -47,10 +47,10 @@ class LobbyApiDegraded(LobbyAPIError):
 
 async def fetch_page(
     endpoint: str,
-    params: dict[str, Any] | None = None,
+    params: Optional[Dict[str, Any]] = None,
     *,
     retry_count: int = 0
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """
     Fetch a single page from the Lobby API with authentication and retries.
 
