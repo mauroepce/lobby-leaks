@@ -274,7 +274,7 @@ class TestPersistence:
                 {"kind": "audiencia"}
             )
             row = result.fetchone()
-            raw_data = json.loads(row.rawData)
+            raw_data = row.rawData  # rawData is now JSONB dict, not string
 
         assert raw_data["referencia"] == "UPDATED: New reference text"
 

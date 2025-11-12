@@ -229,15 +229,26 @@ La arquitectura está diseñada para escalar globalmente:
   - Exit code 0 en modo degradado (no rompe cron/CI)
 - **Lobby Collector con persistencia RAW unificada (E1.1-S2)**
   - Tabla `LobbyEventRaw` para audiencias, viajes y donativos
-  - Event Sourcing Lite: JSON completo en `rawData` (JSONB)
+  - Event Sourcing Lite: JSON completo en `rawData` (JSONB nativo)
   - Upsert idempotente por `externalId` determinista
   - Módulo `derivers.py` para extracción de campos (fecha, monto, institucion, destino)
   - Módulo `persistence.py` con función `upsert_raw_event()`
   - Funciones de ingesta: `ingest_audiencias()`, `ingest_viajes()`, `ingest_donativos()`
   - Fixtures JSON realistas basados en API documentation
-  - 56 tests totales (23 nuevos: derivers + persistencia DB)
+  - 56 tests (33 previos + 23 nuevos: derivers + persistencia DB)
+- **Lobby Collector con staging layer normalizada (E1.1-S3)**
+  - Vista SQL `lobby_events_staging` sobre LobbyEventRaw
+  - Extracción de campos específicos por `kind` (CASE statements)
+  - Campos temporales: `year`, `month` para agregaciones
+  - Campos persona: `nombres`, `apellidos`, `nombresCompletos`, `cargo`
+  - Campos por kind: `institucion`, `destino`, `monto` (según tipo de evento)
+  - Metadata: `rawDataHash` (SHA256), `rawDataSize` para detección de cambios
+  - VIEW simple (no materializada) para queries en tiempo real
+  - 20 tests nuevos cubriendo extracción por kind y metadata
+  - 76 tests totales (56 previos + 20 staging)
+  - Documentación con queries de ejemplo y guía de migración a MATERIALIZED VIEW
 - Pipeline CI/CD básico
-- Documentación técnica
+- Documentación técnica completa
 
 ### 🚧 En Desarrollo
 - Implementación real de métodos MCP

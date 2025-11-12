@@ -238,6 +238,107 @@ count = await ingest_donativos(records, tenant_code="CL")
 
 Todas implementan **graceful degradation**: si un registro falla, continúan con los siguientes.
 
+## Staging Layer: Vista Normalizada
+
+### `lobby_events_staging` VIEW
+
+La vista `lobby_events_staging` proporciona una **capa de staging normalizada** sobre la tabla RAW, extrayendo campos específicos por tipo de evento y agregando metadata útil.
+
+#### Campos Comunes
+
+- `id`, `externalId`, `tenantCode`, `kind`: Identificadores
+- `nombres`, `apellidos`, `nombresCompletos`: Persona relacionada
+- `cargo`: Cargo del sujeto pasivo
+- `fecha`, `year`, `month`: Campos temporales para agregaciones
+
+#### Campos Específicos por Kind
+
+La vista usa `CASE` statements para extraer campos según el tipo de evento:
+
+**Audiencias**:
+```sql
+-- institucion: sujeto_pasivo → nombre_institucion → institucion
+-- destino: NULL (solo viajes tienen destino)
+-- monto: NULL (solo donativos/viajes tienen monto)
+```
+
+**Viajes**:
+```sql
+-- institucion: institucion.nombre → institucion_destino → organizador
+-- destino: destino → CONCAT(ciudad_destino, pais_destino)
+-- monto: costo_total (si está disponible)
+```
+
+**Donativos**:
+```sql
+-- institucion: institucion_donante → donante → institucion
+-- destino: NULL
+-- monto: monto (si está disponible)
+```
+
+#### Metadata
+
+- `rawDataHash`: SHA256 del JSON completo (detección de cambios)
+- `rawDataSize`: Tamaño en bytes del JSON (monitoreo)
+
+#### Queries de Ejemplo
+
+```sql
+-- Contar eventos por año y tipo
+SELECT year, kind, COUNT(*)
+FROM lobby_events_staging
+GROUP BY year, kind
+ORDER BY year DESC, kind;
+
+-- Buscar audiencias de una institución
+SELECT nombresCompletos, fecha, cargo
+FROM lobby_events_staging
+WHERE kind = 'audiencia'
+  AND institucion LIKE '%Hacienda%'
+ORDER BY fecha DESC;
+
+-- Viajes por destino
+SELECT destino, COUNT(*) as total
+FROM lobby_events_staging
+WHERE kind = 'viaje' AND destino IS NOT NULL
+GROUP BY destino
+ORDER BY total DESC;
+
+-- Eventos por mes (últimos 12 meses)
+SELECT
+  year,
+  month,
+  kind,
+  COUNT(*) as eventos
+FROM lobby_events_staging
+WHERE fecha >= NOW() - INTERVAL '12 months'
+GROUP BY year, month, kind
+ORDER BY year DESC, month DESC;
+```
+
+#### Performance
+
+- **Tipo**: VIEW simple (no materializada)
+- **Índices**: Usa índices de la tabla `LobbyEventRaw` subyacente
+- **Recomendación**: Si queries son lentas (>2s) con muchos registros (>50k), considerar materializar la vista con `REFRESH`
+
+### Migración a MATERIALIZED VIEW (Futuro)
+
+Si el rendimiento lo requiere:
+
+```sql
+-- Crear vista materializada
+CREATE MATERIALIZED VIEW lobby_events_staging_mat AS
+SELECT * FROM lobby_events_staging;
+
+-- Crear índices
+CREATE INDEX idx_staging_mat_tenant_kind ON lobby_events_staging_mat(tenantCode, kind);
+CREATE INDEX idx_staging_mat_fecha ON lobby_events_staging_mat(fecha DESC);
+
+-- Refresh manual o automático (cron)
+REFRESH MATERIALIZED VIEW lobby_events_staging_mat;
+```
+
 ## Uso
 
 ### CLI
@@ -399,19 +500,69 @@ services/lobby_collector/
 
 - **`settings.py`**: Configuración centralizada (API URL, API Key, timeouts)
 - **`client.py`**: Capa HTTP (autenticación, reintentos, manejo de errores)
-- **`ingest.py`**: Lógica de negocio (paginación, ventanas temporales)
+- **`ingest.py`**: Lógica de negocio (paginación, ventanas temporales, funciones de ingesta)
+- **`persistence.py`**: Persistencia RAW con upsert idempotente
+- **`derivers.py`**: Extracción de campos derivados (fecha, monto, institucion, destino)
 - **`main.py`**: Interfaz CLI (argparse, logging, orquestación)
+
+## Tests
+
+El proyecto incluye **76 tests** cubriendo todas las funcionalidades:
+
+### Ejecutar Tests
+
+```bash
+# Todos los tests (requiere PostgreSQL)
+python3 -m pytest services/lobby_collector/tests/ -v
+
+# Solo tests de paginación (sin DB)
+python3 -m pytest services/lobby_collector/tests/test_pagination.py -v
+
+# Solo tests de persistencia RAW
+python3 -m pytest services/lobby_collector/tests/test_persistence_raw.py -v
+
+# Solo tests de staging VIEW
+python3 -m pytest services/lobby_collector/tests/test_staging_view.py -v
+
+# Solo tests de fallback/degradación
+python3 -m pytest services/lobby_collector/tests/test_fallback.py -v
+```
+
+### Cobertura de Tests
+
+| Módulo | Tests | Descripción |
+|--------|-------|-------------|
+| **test_pagination.py** | 18 | Paginación, autenticación, rate limiting, reintentos |
+| **test_fallback.py** | 10 | Modo degradado, modo deshabilitado, graceful degradation |
+| **test_windows.py** | 14 | Ventanas temporales, resolución de fechas |
+| **test_persistence_raw.py** | 23 | Derivers, upsert idempotente, persistencia DB |
+| **test_staging_view.py** | 20 | Vista staging, extracción por kind, metadata |
+| **Total** | **76** | Cobertura completa end-to-end |
+
+### Fixtures de Test
+
+Los tests usan fixtures JSON realistas basados en la documentación oficial de la API:
+
+- **`audiencia_sample.json`**: Audiencia con Ministro de Hacienda
+- **`viaje_sample.json`**: Viaje internacional de Ministra del Interior
+- **`donativo_sample.json`**: Donativo a Diputado con institución donante
+
+Ubicación: `services/lobby_collector/tests/fixtures/`
 
 ## Próximos Pasos
 
-Esta historia (feat/e1.1-s1-lobby-auth-pagination) implementa la base de ingesta.
+**Historias completadas**:
+- ✅ **S0**: Graceful degradation y modo fallback
+- ✅ **S1**: Autenticación, paginación y ventanas temporales
+- ✅ **S2**: Persistencia RAW unificada con event sourcing lite
+- ✅ **S3**: Staging layer normalizada con VIEW
 
 **Futuras historias**:
-- **s2**: Guardar datos en PostgreSQL (prisma)
-- **s3**: Normalización de datos chilenos (RUT, regiones, etc.)
-- **s4**: Checkpointing para resumir ingesta interrumpida
-- **s5**: Métricas y observabilidad (Prometheus, Grafana)
-- **s6**: Validación de datos y manejo de duplicados
+- **S4**: Integración CLI completa (ejecutar ingesta desde main.py)
+- **S5**: Normalización avanzada de datos chilenos (RUT, regiones)
+- **S6**: Checkpointing para resumir ingesta interrumpida
+- **S7**: Métricas y observabilidad (Prometheus, Grafana)
+- **S8**: Validación de datos y deduplicación inteligente
 
 ## Troubleshooting
 

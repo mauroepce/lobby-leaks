@@ -79,3 +79,40 @@ model LobbyEventRaw {
   @@index([externalId])
   @@index([kind, fecha(sort: Desc)])
 }
+
+// Staging view: normalized/derived fields from LobbyEventRaw
+// This is a database VIEW, not a table
+model LobbyEventStaging {
+  id               String    @id
+  externalId       String    @unique
+  tenantCode       String
+  kind             String
+
+  // Normalized fields
+  nombres          String?
+  apellidos        String?
+  nombresCompletos String?
+  cargo            String?
+
+  // Temporal fields
+  fecha            DateTime?
+  year             Int?
+  month            Int?
+
+  // Kind-specific fields (derived via CASE)
+  institucion      String?
+  destino          String?
+  monto            Decimal?
+
+  // Metadata
+  rawDataHash      String?
+  rawDataSize      Int?
+
+  createdAt        DateTime
+  updatedAt        DateTime
+
+  @@index([tenantCode])
+  @@index([kind, fecha(sort: Desc)])
+  @@index([year, month])
+  @@map("lobby_events_staging")
+}
