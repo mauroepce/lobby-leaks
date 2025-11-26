@@ -402,16 +402,238 @@ services/lobby_collector/
 - **`ingest.py`**: Lógica de negocio (paginación, ventanas temporales)
 - **`main.py`**: Interfaz CLI (argparse, logging, orquestación)
 
+## Pipeline RAW → STAGING → CANONICAL
+
+El servicio implementa un pipeline de tres capas para transformar datos desde el formato raw de la API hasta un grafo de conocimiento normalizado.
+
+### Arquitectura del Pipeline
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
+│   API Raw   │ --> │   STAGING    │ --> │   CANONICAL     │
+│   (JSONB)   │     │    (VIEW)    │     │    (GRAPH)      │
+└─────────────┘     └──────────────┘     └─────────────────┘
+      │                    │                      │
+      ▼                    ▼                      ▼
+LobbyEventRaw     lobby_events_staging    Person, Org,
+  (tabla)            (SQL VIEW)           Event, Edge
+```
+
+### Capa 1: RAW (Event Sourcing)
+
+**Tabla**: `LobbyEventRaw`
+
+Almacena el JSON completo de la API sin transformaciones:
+
+```sql
+-- Ejemplo de registro raw
+{
+  "id": "uuid-123",
+  "externalId": "audiencia:mario_marcel_2025-01-15",
+  "kind": "audiencia",
+  "rawData": {
+    "nombres": "Mario",
+    "apellidos": "Marcel",
+    "cargo": "Ministro de Hacienda",
+    "sujeto_pasivo": "Ministerio de Hacienda",
+    "fecha_inicio": "2025-01-15T10:00:00Z"
+  }
+}
+```
+
+**Ventajas**:
+- ✅ Event sourcing: Reprocesar datos sin llamadas a la API
+- ✅ Flexibilidad: Sin pérdida de información original
+- ✅ Auditoría: Trazabilidad completa de cambios
+
+### Capa 2: STAGING (Normalización)
+
+**VIEW**: `lobby_events_staging`
+
+Vista SQL que extrae y normaliza campos del JSONB:
+
+```sql
+SELECT
+  id,
+  "externalId",
+  kind,
+  -- Campos normalizados
+  ("rawData"::jsonb)->>'nombres' as nombres,
+  ("rawData"::jsonb)->>'apellidos' as apellidos,
+  CONCAT_WS(' ', ("rawData"::jsonb)->>'nombres', ("rawData"::jsonb)->>'apellidos') as "nombresCompletos",
+
+  -- Campos específicos por kind (CASE statements)
+  CASE
+    WHEN kind = 'audiencia' THEN ("rawData"::jsonb)->>'sujeto_pasivo'
+    WHEN kind = 'viaje' THEN ("rawData"::jsonb)->'institucion'->>'nombre'
+    WHEN kind = 'donativo' THEN ("rawData"::jsonb)->>'institucion_donante'
+  END as institucion,
+
+  -- Metadata
+  ENCODE(SHA256(("rawData"::jsonb)::text::bytea), 'hex') as "rawDataHash",
+  LENGTH(("rawData"::jsonb)::text) as "rawDataSize"
+FROM "LobbyEventRaw";
+```
+
+**Ventajas**:
+- ✅ Queries eficientes sin parsing manual de JSONB
+- ✅ Campos derivados calculados una sola vez
+- ✅ Vista materializable para mejor performance
+
+**Helpers de normalización**:
+```python
+from services.lobby_collector.staging import (
+    normalize_person_name,  # "Juan Pérez" -> "juan perez"
+    normalize_rut,          # "12.345.678-5" -> "123456785"
+    validate_rut,           # Validación módulo 11
+)
+```
+
+### Capa 3: CANONICAL (Knowledge Graph)
+
+**Tablas**: `Person`, `Organisation`, `Event`, `Edge`
+
+Grafo de conocimiento normalizado para análisis de relaciones:
+
+```
+┌──────────┐                  ┌──────────────┐
+│  Person  │                  │ Organisation │
+├──────────┤                  ├──────────────┤
+│ rut      │                  │ rut          │
+│ nombres  │                  │ name         │
+│ apellidos│                  │ tipo         │
+└────┬─────┘                  └──────┬───────┘
+     │                               │
+     │      ┌───────┐                │
+     └─────>│ Edge  │<───────────────┘
+            ├───────┤
+            │ label │ (MEETS, TRAVELS_TO, CONTRIBUTES)
+            │ event │
+            └───┬───┘
+                │
+           ┌────▼────┐
+           │  Event  │
+           ├─────────┤
+           │ kind    │
+           │ fecha   │
+           └─────────┘
+```
+
+**Reglas de Edges por tipo**:
+
+1. **Audiencia**: `Person MEETS Organisation`
+   ```
+   [Mario Marcel] --MEETS--> [Ministerio de Hacienda]
+   ```
+
+2. **Viaje**: `Person TRAVELS_TO Organisation`
+   ```
+   [Gloria Hutt] --TRAVELS_TO--> [ONU]
+   ```
+
+3. **Donativo**: `Organisation CONTRIBUTES Person`
+   ```
+   [Empresa S.A.] --CONTRIBUTES--> [Juan Pérez]
+   ```
+
+**Deduplicación por claves naturales**:
+- **Person**: `(tenantCode, rut)` o `(tenantCode, normalizedName)`
+- **Organisation**: `(tenantCode, rut)` o `(tenantCode, normalizedName)`
+- **Event**: `(tenantCode, externalId, kind)`
+- **Edge**: `(eventId, fromPersonId, fromOrgId, toPersonId, toOrgId, label)`
+
+### Ejecutar el Pipeline Completo
+
+```python
+from services.lobby_collector.ingest import map_staging_to_canonical
+
+# Mapear staging a canonical (idempotente)
+stats = map_staging_to_canonical(
+    kind="audiencia",  # Filtrar por tipo (opcional)
+    limit=1000,        # Limitar registros (opcional)
+)
+
+print(f"Procesados: {stats['rows_processed']}")
+print(f"Personas creadas: {stats['persons_created']}")
+print(f"Organizaciones creadas: {stats['orgs_created']}")
+print(f"Relaciones creadas: {stats['edges_created']}")
+```
+
+**Idempotencia garantizada**: Ejecutar múltiples veces no crea duplicados.
+
+### Queries de Ejemplo
+
+#### 1. Buscar audiencias de un Ministro
+
+```sql
+SELECT
+  e.fecha,
+  o.name as institucion,
+  edge.metadata->>'cargo' as cargo
+FROM "Edge" edge
+JOIN "Person" p ON edge."fromPersonId" = p.id
+JOIN "Organisation" o ON edge."toOrgId" = o.id
+JOIN "Event" e ON edge."eventId" = e.id
+WHERE p."normalizedName" = 'mario marcel'
+  AND edge.label = 'MEETS'
+ORDER BY e.fecha DESC;
+```
+
+#### 2. Encontrar relaciones entre personas
+
+```sql
+-- Personas que se reunieron con la misma organización
+SELECT
+  p1."nombresCompletos" as persona1,
+  p2."nombresCompletos" as persona2,
+  o.name as organizacion_comun
+FROM "Edge" e1
+JOIN "Edge" e2 ON e1."toOrgId" = e2."toOrgId" AND e1.id != e2.id
+JOIN "Person" p1 ON e1."fromPersonId" = p1.id
+JOIN "Person" p2 ON e2."fromPersonId" = p2.id
+JOIN "Organisation" o ON e1."toOrgId" = o.id
+WHERE e1.label = 'MEETS' AND e2.label = 'MEETS';
+```
+
+#### 3. Top organizaciones por número de audiencias
+
+```sql
+SELECT
+  o.name,
+  o.tipo,
+  COUNT(*) as total_audiencias
+FROM "Edge" edge
+JOIN "Organisation" o ON edge."toOrgId" = o.id
+JOIN "Event" e ON edge."eventId" = e.id
+WHERE edge.label = 'MEETS'
+  AND e.kind = 'audiencia'
+GROUP BY o.id, o.name, o.tipo
+ORDER BY total_audiencias DESC
+LIMIT 10;
+```
+
+### Testing del Pipeline
+
+```bash
+# Tests unitarios (61 tests)
+pytest services/lobby_collector/tests/test_staging.py -v          # 32 tests
+pytest services/lobby_collector/tests/test_canonical_mapper.py -v  # 18 tests
+pytest services/lobby_collector/tests/test_canonical_persistence.py -v  # 11 tests
+```
+
 ## Próximos Pasos
 
-Esta historia (feat/e1.1-s1-lobby-auth-pagination) implementa la base de ingesta.
+**Completado (E1.1)**:
+- ✅ **S1**: Autenticación y paginación
+- ✅ **S2**: Persistencia RAW (tabla unificada)
+- ✅ **S3**: Staging layer (VIEW normalizada)
+- ✅ **S4**: Canonical graph (grafo de conocimiento)
 
-**Futuras historias**:
-- **s2**: Guardar datos en PostgreSQL (prisma)
-- **s3**: Normalización de datos chilenos (RUT, regiones, etc.)
-- **s4**: Checkpointing para resumir ingesta interrumpida
-- **s5**: Métricas y observabilidad (Prometheus, Grafana)
-- **s6**: Validación de datos y manejo de duplicados
+**Futuras mejoras**:
+- **S5**: Métricas y observabilidad (Prometheus, Grafana)
+- **S6**: API GraphQL para queries del grafo
+- **S7**: Detección de conflictos de interés
+- **S8**: Visualización de redes de influencia
 
 ## Troubleshooting
 
