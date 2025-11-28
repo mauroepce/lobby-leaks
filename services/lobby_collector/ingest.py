@@ -15,6 +15,9 @@ from sqlalchemy.engine import Engine
 from .client import fetch_page
 from .settings import settings
 from .persistence import upsert_raw_event
+from .staging import read_staging_rows
+from .canonical_mapper import map_staging_row
+from .canonical_persistence import upsert_canonical
 
 
 logger = logging.getLogger(__name__)
@@ -331,3 +334,132 @@ async def ingest_donativos(
 
     logger.info(f"Ingested {processed}/{len(records)} donativos")
     return processed
+
+
+def map_staging_to_canonical(
+    engine: Optional[Engine] = None,
+    kind: Optional[str] = None,
+    tenant_code: str = "CL",
+    limit: Optional[int] = None,
+) -> Dict[str, int]:
+    """
+    Map staging VIEW rows to canonical graph entities.
+
+    Reads from lobby_events_staging VIEW, extracts canonical entities
+    (Person, Organisation, Event, Edge), and persists them idempotently.
+
+    Args:
+        engine: SQLAlchemy engine (creates new if None)
+        kind: Filter by event kind ('audiencia', 'viaje', 'donativo'). None = all
+        tenant_code: Tenant filter (default: 'CL')
+        limit: Maximum rows to process (default: no limit)
+
+    Returns:
+        Statistics dict with entity counts:
+        {
+            'rows_processed': int,
+            'persons_created': int,
+            'persons_updated': int,
+            'orgs_created': int,
+            'orgs_updated': int,
+            'events_created': int,
+            'events_updated': int,
+            'edges_created': int,
+            'edges_updated': int,
+        }
+
+    Example:
+        >>> stats = map_staging_to_canonical(kind="audiencia", limit=100)
+        >>> print(f"Processed {stats['rows_processed']} rows")
+        >>> print(f"Created {stats['persons_created']} persons, {stats['edges_created']} edges")
+    """
+    if engine is None:
+        engine = get_engine()
+
+    # Read staging rows
+    logger.info(f"Reading staging rows: kind={kind}, tenant_code={tenant_code}, limit={limit}")
+    staging_rows = read_staging_rows(
+        engine=engine,
+        kind=kind,
+        tenant_code=tenant_code,
+        limit=limit,
+    )
+
+    if not staging_rows:
+        logger.info("No staging rows found to process")
+        return {
+            'rows_processed': 0,
+            'persons_created': 0,
+            'persons_updated': 0,
+            'orgs_created': 0,
+            'orgs_updated': 0,
+            'events_created': 0,
+            'events_updated': 0,
+            'edges_created': 0,
+            'edges_updated': 0,
+        }
+
+    # Aggregate stats
+    total_stats = {
+        'rows_processed': 0,
+        'persons_created': 0,
+        'persons_updated': 0,
+        'orgs_created': 0,
+        'orgs_updated': 0,
+        'events_created': 0,
+        'events_updated': 0,
+        'edges_created': 0,
+        'edges_updated': 0,
+    }
+
+    # Process each staging row
+    for row in staging_rows:
+        try:
+            # Need to fetch rawData from LobbyEventRaw
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                result = conn.execute(
+                    text('SELECT "rawData" FROM "LobbyEventRaw" WHERE "externalId" = :external_id'),
+                    {"external_id": row["externalId"]}
+                )
+                raw_row = result.fetchone()
+                if not raw_row:
+                    logger.warning(f"No raw data found for externalId={row['externalId']}")
+                    continue
+
+                raw_data = raw_row[0]
+
+            # Map to canonical entities
+            bundle = map_staging_row(row, raw_data)
+
+            # Upsert to database
+            stats = upsert_canonical(engine, bundle)
+
+            # Aggregate stats
+            total_stats['rows_processed'] += 1
+            total_stats['persons_created'] += stats['persons_created']
+            total_stats['persons_updated'] += stats['persons_updated']
+            total_stats['orgs_created'] += stats['orgs_created']
+            total_stats['orgs_updated'] += stats['orgs_updated']
+            total_stats['events_created'] += stats['events_created']
+            total_stats['events_updated'] += stats['events_updated']
+            total_stats['edges_created'] += stats['edges_created']
+            total_stats['edges_updated'] += stats['edges_updated']
+
+        except Exception as e:
+            logger.error(
+                f"Failed to map staging row: error={str(e)}, "
+                f"external_id={row.get('externalId')}, kind={row.get('kind')}"
+            )
+            # Continue processing other rows (graceful degradation)
+            continue
+
+    logger.info(
+        f"Canonical mapping complete: processed={total_stats['rows_processed']}, "
+        f"persons={total_stats['persons_created']}+{total_stats['persons_updated']}, "
+        f"orgs={total_stats['orgs_created']}+{total_stats['orgs_updated']}, "
+        f"events={total_stats['events_created']}+{total_stats['events_updated']}, "
+        f"edges={total_stats['edges_created']}+{total_stats['edges_updated']}"
+    )
+
+    return total_stats
