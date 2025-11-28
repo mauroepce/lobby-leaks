@@ -174,11 +174,11 @@ jobs:
         shell: bash
 
       - name: Apply migrations
-        run: npx prisma migrate deploy --schema=prisma/schema.prisma
+        run: npx prisma@6.12.0 migrate deploy --schema=prisma/schema.prisma
         shell: bash
 
       - name: Seed leaks
-        run: npx prisma db execute --file scripts/seed.sql --schema=prisma/schema.prisma
+        run: npx prisma@6.12.0 db execute --file scripts/seed.sql --schema=prisma/schema.prisma
 
       - name: Run RLS tests
         run: make test-rls
