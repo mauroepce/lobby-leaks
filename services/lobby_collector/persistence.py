@@ -90,7 +90,7 @@ async def upsert_raw_event(
             "externalId": external_id,
             "tenantCode": tenant_code,
             "kind": kind,
-            "rawData": json.dumps(record),  # Store as JSON string
+            "rawData": record,  # Store as JSONB (SQLAlchemy will handle serialization)
             "fecha": fecha,
             "monto": monto,
             "institucion": institucion,

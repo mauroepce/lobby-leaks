@@ -80,127 +80,39 @@ model LobbyEventRaw {
   @@index([kind, fecha(sort: Desc)])
 }
 
-// ============================================================================
-// CANONICAL GRAPH MODELS
-// ============================================================================
-// These models represent the normalized knowledge graph extracted from raw data.
-// Used for relationship analysis, network visualization, and data linking.
-
-model Person {
-  id               String   @id @default(uuid())
+// Staging view: normalized/derived fields from LobbyEventRaw
+// This is a database VIEW, not a table
+model LobbyEventStaging {
+  id               String    @id
+  externalId       String    @unique
   tenantCode       String
+  kind             String
 
-  // Identity fields (natural keys for upsert)
-  rut              String?  // Chilean RUT (validated, normalized)
-  normalizedName   String   // Lowercase, trimmed: "juan perez garcia"
+  // Normalized fields
+  nombres          String?
+  apellidos        String?
+  nombresCompletos String?
+  cargo            String?
 
-  // Display fields
-  nombres          String
-  apellidos        String
-  nombresCompletos String   // Full name: "Juan Pérez García"
+  // Temporal fields
+  fecha            DateTime?
+  year             Int?
+  month            Int?
 
-  cargo            String?  // Current or most recent position
+  // Kind-specific fields (derived via CASE)
+  institucion      String?
+  destino          String?
+  monto            Decimal?
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  // Metadata
+  rawDataHash      String?
+  rawDataSize      Int?
 
-  // Relations
-  edgesFrom        Edge[]   @relation("EdgeFrom")
-  edgesTo          Edge[]   @relation("EdgeTo")
+  createdAt        DateTime
+  updatedAt        DateTime
 
-  @@unique([tenantCode, rut])
-  @@unique([tenantCode, normalizedName])
   @@index([tenantCode])
-  @@index([rut])
-  @@index([normalizedName])
-}
-
-model Organisation {
-  id               String   @id @default(uuid())
-  tenantCode       String
-
-  // Identity fields (natural keys)
-  rut              String?  // Chilean RUT for legal entities
-  normalizedName   String   // "ministerio de hacienda"
-
-  // Display fields
-  name             String   // "Ministerio de Hacienda"
-  tipo             String?  // "ministerio", "empresa", "ong", "partido"
-
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  // Relations
-  edgesFrom        Edge[]   @relation("EdgeFromOrg")
-  edgesTo          Edge[]   @relation("EdgeToOrg")
-
-  @@unique([tenantCode, rut])
-  @@unique([tenantCode, normalizedName])
-  @@index([tenantCode])
-  @@index([rut])
-  @@index([normalizedName])
-  @@index([tipo])
-}
-
-model Event {
-  id             String   @id @default(uuid())
-  tenantCode     String
-
-  // Link back to source
-  externalId     String   // From LobbyEventRaw.externalId
-  kind           String   // 'audiencia' | 'viaje' | 'donativo'
-
-  // Event metadata
-  fecha          DateTime?
-  descripcion    String?
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  // Relations
-  edges          Edge[]
-
-  @@unique([tenantCode, externalId, kind])
-  @@index([tenantCode])
-  @@index([kind])
-  @@index([fecha(sort: Desc)])
-}
-
-model Edge {
-  id             String   @id @default(uuid())
-  tenantCode     String
-
-  // Source and target (polymorphic: Person or Organisation)
-  fromPersonId   String?
-  fromOrgId      String?
-  toPersonId     String?
-  toOrgId        String?
-
-  // Edge semantics
-  label          String   // 'MEETS', 'TRAVELS_TO', 'CONTRIBUTES', 'WORKS_FOR'
-
-  // Link to triggering event
-  eventId        String
-  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  // Optional metadata
-  metadata       Json?    // Extra context (e.g., meeting topic, contribution amount)
-
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  // Relations
-  fromPerson     Person?       @relation("EdgeFrom", fields: [fromPersonId], references: [id])
-  fromOrg        Organisation? @relation("EdgeFromOrg", fields: [fromOrgId], references: [id])
-  toPerson       Person?       @relation("EdgeTo", fields: [toPersonId], references: [id])
-  toOrg          Organisation? @relation("EdgeToOrg", fields: [toOrgId], references: [id])
-
-  @@unique([eventId, fromPersonId, fromOrgId, toPersonId, toOrgId, label])
-  @@index([tenantCode])
-  @@index([label])
-  @@index([eventId])
-  @@index([fromPersonId])
-  @@index([fromOrgId])
-  @@index([toPersonId])
-  @@index([toOrgId])
+  @@index([kind, fecha(sort: Desc)])
+  @@index([year, month])
+  @@map("lobby_events_staging")
 }
