@@ -58,10 +58,10 @@ db-wait:
 
 # Aplica migraciones (no destruye datos)
 migrate:
-	npx prisma migrate deploy --schema=prisma/schema.prisma
+	npx prisma@6.12.0 migrate deploy --schema=prisma/schema.prisma
 
 seed: migrate
-	npx prisma db execute --file scripts/seed.sql --schema=prisma/schema.prisma
+	npx prisma@6.12.0 db execute --file scripts/seed.sql --schema=prisma/schema.prisma
 
 # Reset destructivo + seed para desarrollo local
 db-reset: db-up db-wait
