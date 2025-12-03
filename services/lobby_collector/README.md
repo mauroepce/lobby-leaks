@@ -549,6 +549,167 @@ Los tests usan fixtures JSON realistas basados en la documentación oficial de l
 
 Ubicación: `services/lobby_collector/tests/fixtures/`
 
+## Cron & Métricas
+
+### Ejecución Automática (GitHub Actions)
+
+El pipeline de ingesta se ejecuta automáticamente mediante GitHub Actions:
+
+- **Schedule**: Diario a las 7:00 AM UTC (4:00 AM Chile)
+- **Workflow**: `.github/workflows/ingest-lobby.yml`
+- **Trigger manual**: Disponible desde GitHub Actions UI
+
+#### Configuración de Secrets
+
+En GitHub Repository Settings > Secrets and variables > Actions:
+
+| Secret | Descripción | Requerido |
+|--------|-------------|-----------|
+| `POSTGRES_PASSWORD` | Password de PostgreSQL | **Sí** |
+| `ENABLE_LOBBY_API` | `true` para habilitar fetch | No (default: `false`) |
+| `LOBBY_API_KEY` | API Key para Ley de Lobby | Solo si enabled |
+
+| Variable | Descripción | Default |
+|----------|-------------|---------|
+| `LOBBY_API_BASE_URL` | URL base de la API | `https://www.leylobby.gob.cl/api/v1` |
+
+### Ejecución Local
+
+```bash
+# Ejecutar pipeline completo (últimos 7 días)
+make ingest-lobby
+
+# Ejecutar con días personalizados
+make ingest-lobby DAYS=30
+
+# Con debug logging
+ENABLE_LOBBY_API=true make ingest-lobby DAYS=7
+```
+
+### Métricas JSON
+
+El runner genera un archivo `ingest-metrics.json` con el resultado de la ejecución:
+
+#### Status: `ok` (Ejecución exitosa)
+
+```json
+{
+  "timestamp": "2025-01-15T07:00:00Z",
+  "service": "lobby-collector",
+  "tenant_code": "CL",
+  "days": 7,
+  "status": "ok",
+  "fetch": {
+    "enabled": true,
+    "audiencias_inserted": 150,
+    "viajes_inserted": 25,
+    "donativos_inserted": 10
+  },
+  "map": {
+    "rows_processed": 185,
+    "persons_created": 120,
+    "persons_updated": 30,
+    "orgs_created": 45,
+    "orgs_updated": 10,
+    "events_created": 185,
+    "events_updated": 0,
+    "edges_created": 185,
+    "edges_updated": 0
+  },
+  "errors": [],
+  "duration_seconds": 45.2
+}
+```
+
+#### Status: `skipped` (API deshabilitada)
+
+```json
+{
+  "timestamp": "2025-01-15T07:00:00Z",
+  "service": "lobby-collector",
+  "tenant_code": "CL",
+  "days": 7,
+  "status": "skipped",
+  "fetch": {
+    "enabled": false,
+    "skipped": true,
+    "audiencias_inserted": 0,
+    "viajes_inserted": 0,
+    "donativos_inserted": 0
+  },
+  "map": {
+    "rows_processed": 0,
+    "persons_created": 0,
+    "persons_updated": 0,
+    "orgs_created": 0,
+    "orgs_updated": 0,
+    "events_created": 0,
+    "events_updated": 0,
+    "edges_created": 0,
+    "edges_updated": 0
+  },
+  "errors": [],
+  "duration_seconds": 1.2
+}
+```
+
+#### Status: `degraded` (Fetch falló, map ejecutado)
+
+```json
+{
+  "timestamp": "2025-01-15T07:00:00Z",
+  "service": "lobby-collector",
+  "status": "degraded",
+  "fetch": {
+    "enabled": true,
+    "audiencias_inserted": 0,
+    "viajes_inserted": 0,
+    "donativos_inserted": 0
+  },
+  "map": {
+    "rows_processed": 50,
+    "persons_created": 20,
+    "events_created": 50,
+    "edges_created": 50
+  },
+  "errors": [
+    "Fetch failed: LobbyAPIAuthError: HTTP 401 Unauthorized"
+  ],
+  "duration_seconds": 12.5
+}
+```
+
+### Safe Fallback
+
+El pipeline **siempre termina con exit code 0** para no romper cron jobs:
+
+- Si `ENABLE_LOBBY_API=false`: status=`skipped`, no fetch, solo map
+- Si API falla (401, 5xx, timeout): status=`degraded`, map se ejecuta
+- Si map falla: status=`error`, errores en array `errors`
+
+El status real se indica en el JSON de métricas, no en el exit code.
+
+### Monitoreo
+
+#### GitHub Actions
+
+1. Ver ejecuciones en **Actions** > **Scheduled Lobby Ingestion**
+2. Descargar artifact `ingest-metrics-{run_id}` con métricas JSON
+3. Filtrar por status en el JSON para alertas
+
+#### Alertas (Ejemplo con jq)
+
+```bash
+# Verificar status del último run
+cat ingest-metrics.json | jq -r '.status'
+
+# Contar errores
+cat ingest-metrics.json | jq '.errors | length'
+
+# Verificar si hubo datos nuevos
+cat ingest-metrics.json | jq '.map.rows_processed'
+```
+
 ## Próximos Pasos
 
 **Historias completadas**:
@@ -556,12 +717,12 @@ Ubicación: `services/lobby_collector/tests/fixtures/`
 - ✅ **S1**: Autenticación, paginación y ventanas temporales
 - ✅ **S2**: Persistencia RAW unificada con event sourcing lite
 - ✅ **S3**: Staging layer normalizada con VIEW
+- ✅ **S4**: Canonical graph mapping (Person, Org, Event, Edge)
+- ✅ **S5**: Cron diario y métricas del pipeline
 
 **Futuras historias**:
-- **S4**: Integración CLI completa (ejecutar ingesta desde main.py)
-- **S5**: Normalización avanzada de datos chilenos (RUT, regiones)
 - **S6**: Checkpointing para resumir ingesta interrumpida
-- **S7**: Métricas y observabilidad (Prometheus, Grafana)
+- **S7**: Métricas avanzadas (Prometheus, Grafana dashboards)
 - **S8**: Validación de datos y deduplicación inteligente
 
 ## Troubleshooting
