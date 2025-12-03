@@ -193,6 +193,11 @@ lobby-collector-install: .venv/bin/python ## install lobby collector dependencie
 lobby-collector-test: lobby-collector-install ## run lobby collector tests
 	$(PYTEST) -q services/lobby_collector/tests -v
 
+# Lobby ingestion pipeline (fetch if enabled → map to canonical)
+DAYS ?= 7
+ingest-lobby: lobby-collector-install export-env ## run lobby ingestion pipeline
+	$(PY) -m services.lobby_collector.runner --days $(DAYS)
+
 # ========= Template Docker =========
 TEMPLATE_IMAGE ?= lobbyleaks-template
 
@@ -211,4 +216,4 @@ run-template: build-template ## run template container con .env
 .PHONY: export-env install template-install setup lint test test-rls db-up db-wait seed db-reset psql \
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
         bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test template-helpers-test \
-        build-template run-template lobby-collector-install lobby-collector-test
+        build-template run-template lobby-collector-install lobby-collector-test ingest-lobby
