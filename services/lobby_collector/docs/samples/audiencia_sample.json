@@ -1,0 +1,35 @@
+{
+  "nombres": "Juan",
+  "apellidos": "Perez Garcia",
+  "cargo": "Ministro de Ejemplo",
+  "referencia": "Reunion sobre proyecto de ley",
+  "forma": "P",
+  "lugar": "Ministerio de Ejemplo, Calle Principal 100, Santiago",
+  "comuna": "Santiago",
+  "fecha_inicio": "2025-01-15 10:00:00",
+  "fecha_termino": "2025-01-15 11:30:00",
+  "sujeto_pasivo_url": "https://www.leylobby.gob.cl/api/v1/sujetos-pasivos/123",
+  "institucion_url": "https://www.leylobby.gob.cl/api/v1/instituciones/EJM001",
+  "asistentes": [
+    {
+      "nombres": "Maria",
+      "apellidos": "Lopez Martinez",
+      "cargo_activo_url": "https://www.leylobby.gob.cl/api/v1/cargos-activos/456",
+      "representa": {
+        "nombre": "Asociacion de Ejemplo de Chile",
+        "tipo": "Persona Juridica",
+        "giro": "Asociacion Gremial",
+        "domicilio": "Avenida Ejemplo 140, Santiago",
+        "representante_legal": "Pedro Rodriguez",
+        "naturaleza": "Asociacion",
+        "directorio": "Pedro Rodriguez (Presidente), Ana Gonzalez (Secretaria)"
+      }
+    }
+  ],
+  "_metadata": {
+    "description": "Sample payload for audiencia endpoint - anonymized",
+    "source": "Ley de Lobby API /audiencias",
+    "edge_type": "MEETS",
+    "notes": "Names and institutions are fictional for documentation purposes"
+  }
+}

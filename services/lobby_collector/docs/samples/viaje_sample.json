@@ -1,0 +1,74 @@
+{
+  "nombres": "Ana",
+  "apellidos": "Martinez Silva",
+  "cargo": "Subsecretaria de Ejemplo",
+  "destino": "Madrid, Espana",
+  "categoria": "Internacional",
+  "objeto": "Participacion en conferencia internacional",
+  "fecha_inicio": "2025-02-10",
+  "fecha_termino": "2025-02-15",
+  "valor": 2500000,
+  "moneda": "CLP",
+  "sujeto_pasivo_url": "https://www.leylobby.gob.cl/api/v1/sujetos-pasivos/789",
+  "institucion_url": "https://www.leylobby.gob.cl/api/v1/instituciones/EJM002",
+  "institucion": {
+    "codigo": "EJM002",
+    "nombre": "Ministerio de Ejemplo"
+  },
+  "desglose": [
+    {
+      "titulo": "Pasaje aereo",
+      "valor": 1500000,
+      "moneda": "CLP",
+      "tipo": "Transporte",
+      "financista": {
+        "nombre": "Fundacion Internacional de Ejemplo",
+        "pais": "Espana",
+        "giro": "Fundacion sin fines de lucro",
+        "actividades": "Investigacion y promocion de politicas publicas",
+        "domicilio": "Calle Gran Via 12, Madrid",
+        "representante_legal": "Carlos Fernandez",
+        "naturaleza": "Fundacion",
+        "directorio": null
+      }
+    },
+    {
+      "titulo": "Alojamiento",
+      "valor": 800000,
+      "moneda": "CLP",
+      "tipo": "Hospedaje",
+      "financista": {
+        "nombre": "Fundacion Internacional de Ejemplo",
+        "pais": "Espana",
+        "giro": "Fundacion sin fines de lucro",
+        "actividades": "Investigacion y promocion de politicas publicas",
+        "domicilio": "Calle Gran Via 12, Madrid",
+        "representante_legal": "Carlos Fernandez",
+        "naturaleza": "Fundacion",
+        "directorio": null
+      }
+    },
+    {
+      "titulo": "Alimentacion",
+      "valor": 200000,
+      "moneda": "CLP",
+      "tipo": "Alimentacion",
+      "financista": {
+        "nombre": "Fundacion Internacional de Ejemplo",
+        "pais": "Espana",
+        "giro": "Fundacion sin fines de lucro",
+        "actividades": "Investigacion y promocion de politicas publicas",
+        "domicilio": "Calle Gran Via 12, Madrid",
+        "representante_legal": "Carlos Fernandez",
+        "naturaleza": "Fundacion",
+        "directorio": null
+      }
+    }
+  ],
+  "_metadata": {
+    "description": "Sample payload for viaje endpoint - anonymized",
+    "source": "Ley de Lobby API /viajes",
+    "edge_type": "TRAVELS_TO",
+    "notes": "Names, institutions, and amounts are fictional for documentation purposes"
+  }
+}
