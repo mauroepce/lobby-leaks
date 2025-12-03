@@ -1,0 +1,2 @@
+Name,Type,Country,URL,Format,Relations,Epic,Priority,Status,Notes
+Ley de Lobby API,Oficial,Chile,https://www.leylobby.gob.cl/api,JSON,MEETS|TRAVELS_TO|CONTRIBUTES,E1.1,P1,Degradado,Requiere API-Key; inestable; usar InfoLobby CSV como fallback
