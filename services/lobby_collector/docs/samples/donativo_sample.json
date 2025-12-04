@@ -1,0 +1,32 @@
+{
+  "nombres": "Pedro",
+  "apellidos": "Gonzalez Rojas",
+  "cargo": "Diputado",
+  "ocasion": "Ceremonia de aniversario institucional",
+  "descripcion": "Obsequio conmemorativo",
+  "fecha": "2025-01-20",
+  "sujeto_pasivo_url": "https://www.leylobby.gob.cl/api/v1/sujetos-pasivos/456",
+  "institucion_url": "https://www.leylobby.gob.cl/api/v1/instituciones/CAM001",
+  "institucion": {
+    "codigo": "CAM001",
+    "nombre": "Camara de Diputados"
+  },
+  "donantes": [
+    {
+      "nombre": "Federacion de Productores de Ejemplo",
+      "tipo": "Persona Juridica",
+      "giro": "Asociacion Gremial",
+      "actividades": "Representacion y defensa de intereses gremiales",
+      "domicilio": "Avenida Ejemplo 120, Providencia",
+      "representante_legal": "Roberto Sanchez",
+      "naturaleza": "Asociacion",
+      "directorio": null
+    }
+  ],
+  "_metadata": {
+    "description": "Sample payload for donativo endpoint - anonymized",
+    "source": "Ley de Lobby API /donativos",
+    "edge_type": "CONTRIBUTES",
+    "notes": "Names and institutions are fictional for documentation purposes"
+  }
+}

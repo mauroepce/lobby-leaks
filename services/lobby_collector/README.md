@@ -1,6 +1,88 @@
 # Lobby Collector
 
+> **Source Status: Degraded** | API oficial inestable (401/5xx frecuentes) | Fallback: InfoLobby CSV (E1.2)
+
 Microservice para ingestar datos de la API pública de la Ley de Lobby de Chile (audiencias, viajes, donativos).
+
+## Fuente de Datos
+
+| Campo | Valor |
+|-------|-------|
+| **Nombre** | Ley de Lobby API |
+| **Tipo** | Oficial (Gobierno de Chile) |
+| **País** | Chile |
+| **URL Base** | `https://www.leylobby.gob.cl/api/v1` |
+| **Formato** | JSON REST API |
+| **Relaciones** | MEETS, TRAVELS_TO, CONTRIBUTES |
+| **Epic** | E1.1 |
+| **Prioridad** | P1 |
+| **Estado** | **Degradado** |
+
+### Endpoints Disponibles
+
+| Endpoint | Descripción | Método | Auth |
+|----------|-------------|--------|------|
+| `/audiencias` | Reuniones con sujetos pasivos | GET | Bearer Token |
+| `/viajes` | Viajes financiados por terceros | GET | Bearer Token |
+| `/donativos` | Regalos y donativos recibidos | GET | Bearer Token |
+
+### Headers Requeridos
+
+```http
+Authorization: Bearer {LOBBY_API_KEY}
+Content-Type: application/json
+Accept: application/json
+```
+
+### Estado Actual: Degradado
+
+La API oficial de Ley de Lobby presenta inestabilidad frecuente:
+
+- **HTTP 401**: Autenticación rechazada sin razón aparente
+- **HTTP 5xx**: Errores de servidor intermitentes
+- **Timeouts**: Respuestas lentas o sin respuesta
+
+**Recomendación**: Usar `ENABLE_LOBBY_API=false` y esperar estabilización, o usar el fallback InfoLobby CSV (Epic E1.2).
+
+### Fallback: InfoLobby CSV (E1.2)
+
+Como alternativa a la API inestable, el Epic E1.2 implementará ingesta desde:
+- **Fuente**: [InfoLobby](https://www.infolobby.cl/) (scraping de CSVs públicos)
+- **Ventaja**: Datos más estables y completos
+- **Desventaja**: Actualización menos frecuente
+
+## Pipeline de Datos
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         LOBBY COLLECTOR                              │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────────────┐    │
+│   │  API/CSV    │───▶│    RAW      │───▶│      STAGING        │    │
+│   │  (Source)   │    │ (JSONB)     │    │   (SQL VIEW)        │    │
+│   └─────────────┘    └─────────────┘    └──────────┬──────────┘    │
+│                                                     │               │
+│                                                     ▼               │
+│                                          ┌─────────────────────┐    │
+│                                          │    CANONICAL        │    │
+│                                          │  (Knowledge Graph)  │    │
+│                                          │                     │    │
+│                                          │  Person ─── Edge    │    │
+│                                          │     │        │      │    │
+│                                          │     └── Event ──┘   │    │
+│                                          │         │           │    │
+│                                          │    Organisation     │    │
+│                                          └─────────────────────┘    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Capas del Pipeline
+
+1. **RAW** (`LobbyEventRaw`): JSONB completo, event sourcing lite
+2. **STAGING** (`lobby_events_staging`): Vista normalizada con campos extraídos
+3. **CANONICAL**: Grafo de conocimiento (Person, Organisation, Event, Edge)
 
 ## Características
 
