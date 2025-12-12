@@ -1,1 +1,1 @@
-"""Tests for InfoLobby Sync service."""
+"""Tests for info_lobby_sync service."""
