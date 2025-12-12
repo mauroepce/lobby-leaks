@@ -76,6 +76,22 @@ make lobby-collector-test  # Run all 23 tests
 
 📖 **Full docs**: [services/lobby_collector/README.md](services/lobby_collector/README.md)
 
+### InfoLobby Sync
+Alternative data source using SPARQL endpoint from datos.infolobby.cl:
+
+- **SPARQL**: Queries RDF graph for audiencias, viajes, donativos
+- **WAF Bypass**: Proper headers for Fortinet firewall
+- **Typed Parsing**: Date, RUT, name normalization
+- **Checksum**: SHA256 for incremental sync detection
+- **Testing**: 45 comprehensive tests
+
+```bash
+# Testing
+pytest services/info_lobby_sync/tests/ -v  # Run all 45 tests
+```
+
+📖 **Schema docs**: [docs/infolobby/sparql-schema.md](docs/infolobby/sparql-schema.md)
+
 ### MCP Hub
 Multi-tenant microservice for document processing and OCR (JSON-RPC 2.0 over HTTP).
 
@@ -132,6 +148,7 @@ lobby-leaks/
 ├── services/
 │   ├── _template/         # Service boilerplate ⭐
 │   ├── lobby_collector/   # Ley de Lobby API ingestion
+│   ├── info_lobby_sync/   # InfoLobby SPARQL ingestion
 │   └── mcp-hub/           # Document processing microservice
 └── tests/                 # Integration and security tests
 ```
