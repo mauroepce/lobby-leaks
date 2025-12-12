@@ -1,0 +1,32 @@
+PREFIX cplt: <http://datos.infolobby.cl/ontologia/cplt#>
+
+SELECT
+  ?uri
+  ?codigoURI
+  ?identificadorTemporal
+  ?fechaEvento
+  ?fechaActualizacion
+  ?datosPasivos
+  ?datosActivos
+  ?datosRepresentados
+  ?datosMaterias
+  ?descripcion
+  ?observaciones
+  ?esDeTipo
+WHERE {
+  ?uri a cplt:RegistroAudiencia .
+  ?uri cplt:codigoURI ?codigoURI .
+  OPTIONAL { ?uri cplt:identificadorTemporal ?identificadorTemporal }
+  OPTIONAL { ?uri cplt:fechaEvento ?fechaEvento }
+  OPTIONAL { ?uri cplt:fechaActualizacion ?fechaActualizacion }
+  OPTIONAL { ?uri cplt:datosPasivos ?datosPasivos }
+  OPTIONAL { ?uri cplt:datosActivos ?datosActivos }
+  OPTIONAL { ?uri cplt:datosRepresentados ?datosRepresentados }
+  OPTIONAL { ?uri cplt:datosMaterias ?datosMaterias }
+  OPTIONAL { ?uri cplt:descripcion ?descripcion }
+  OPTIONAL { ?uri cplt:observaciones ?observaciones }
+  OPTIONAL { ?uri cplt:esDeTipo ?esDeTipo }
+}
+ORDER BY DESC(?fechaEvento)
+LIMIT {limit}
+OFFSET {offset}
