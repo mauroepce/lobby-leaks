@@ -1,0 +1,28 @@
+PREFIX cplt: <http://datos.infolobby.cl/ontologia/cplt#>
+
+SELECT
+  ?uri
+  ?codigoURI
+  ?identificadorTemporal
+  ?fechaEvento
+  ?fechaActualizacion
+  ?descripcion
+  ?datosRazones
+  ?datosObjetos
+  ?datosFinancistas
+  ?costo
+WHERE {{
+  ?uri a cplt:Viaje .
+  ?uri cplt:codigoURI ?codigoURI .
+  OPTIONAL {{ ?uri cplt:identificadorTemporal ?identificadorTemporal }}
+  OPTIONAL {{ ?uri cplt:fechaEvento ?fechaEvento }}
+  OPTIONAL {{ ?uri cplt:fechaActualizacion ?fechaActualizacion }}
+  OPTIONAL {{ ?uri cplt:descripcion ?descripcion }}
+  OPTIONAL {{ ?uri cplt:datosRazones ?datosRazones }}
+  OPTIONAL {{ ?uri cplt:datosObjetos ?datosObjetos }}
+  OPTIONAL {{ ?uri cplt:datosFinancistas ?datosFinancistas }}
+  OPTIONAL {{ ?uri cplt:costo ?costo }}
+}}
+ORDER BY DESC(?fechaEvento)
+LIMIT {limit}
+OFFSET {offset}

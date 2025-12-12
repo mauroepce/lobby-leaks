@@ -1,0 +1,24 @@
+PREFIX cplt: <http://datos.infolobby.cl/ontologia/cplt#>
+
+SELECT
+  ?uri
+  ?codigoURI
+  ?identificadorTemporal
+  ?fechaEvento
+  ?fechaActualizacion
+  ?descripcion
+  ?ocasion
+  ?datosDonantes
+WHERE {{
+  ?uri a cplt:Donativo .
+  ?uri cplt:codigoURI ?codigoURI .
+  OPTIONAL {{ ?uri cplt:identificadorTemporal ?identificadorTemporal }}
+  OPTIONAL {{ ?uri cplt:fechaEvento ?fechaEvento }}
+  OPTIONAL {{ ?uri cplt:fechaActualizacion ?fechaActualizacion }}
+  OPTIONAL {{ ?uri cplt:descripcion ?descripcion }}
+  OPTIONAL {{ ?uri cplt:ocasion ?ocasion }}
+  OPTIONAL {{ ?uri cplt:datosDonantes ?datosDonantes }}
+}}
+ORDER BY DESC(?fechaEvento)
+LIMIT {limit}
+OFFSET {offset}

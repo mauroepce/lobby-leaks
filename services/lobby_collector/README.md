@@ -42,14 +42,15 @@ La API oficial de Ley de Lobby presenta inestabilidad frecuente:
 - **HTTP 5xx**: Errores de servidor intermitentes
 - **Timeouts**: Respuestas lentas o sin respuesta
 
-**Recomendación**: Usar `ENABLE_LOBBY_API=false` y esperar estabilización, o usar el fallback InfoLobby CSV (Epic E1.2).
+**Recomendación**: Usar `ENABLE_LOBBY_API=false` y esperar estabilización, o usar el fallback InfoLobby SPARQL (Epic E1.2).
 
-### Fallback: InfoLobby CSV (E1.2)
+### Fallback: InfoLobby SPARQL (E1.2)
 
-Como alternativa a la API inestable, el Epic E1.2 implementará ingesta desde:
-- **Fuente**: [InfoLobby](https://www.infolobby.cl/) (scraping de CSVs públicos)
-- **Ventaja**: Datos más estables y completos
-- **Desventaja**: Actualización menos frecuente
+Como alternativa a la API inestable, el Epic E1.2 implementa ingesta desde:
+- **Fuente**: [InfoLobby SPARQL](http://datos.infolobby.cl/sparql) (endpoint RDF/LOD)
+- **Servicio**: `services/info_lobby_sync/`
+- **Ventaja**: Datos más estables, estructura semántica rica
+- **Documentación**: [docs/infolobby/sparql-schema.md](../../docs/infolobby/sparql-schema.md)
 
 ## Pipeline de Datos
 
