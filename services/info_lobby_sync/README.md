@@ -39,31 +39,80 @@ SPARQL_BATCH_SIZE=1000
 HTTP_TIMEOUT=30.0
 HTTP_MAX_RETRIES=3
 ENABLE_INFOLOBBY_SYNC=true
+DATABASE_URL=postgresql://user:pass@localhost:5432/lobbyleaks
+```
+
+## Pipeline
+
+```
+SPARQL Endpoint → fetcher.py → parser.py → merge.py → persistence.py → report.py
+     │                │            │           │            │             │
+     └── Raw JSON     └── Typed    └── Dedup   └── UPSERT   └── JSON
+                          records      + match     to DB        metrics
 ```
 
 ## Usage
 
+### Full Sync Example
+
+```python
+from services.info_lobby_sync.fetcher import SPARQLClient, fetch_audiencias
+from services.info_lobby_sync.parser import parse_all_audiencias
+from services.info_lobby_sync.merge import merge_records_in_memory
+from services.info_lobby_sync.persistence import persist_merge_result
+from services.info_lobby_sync.report import create_report, save_report, FetchMetrics
+from services._template.db.connector import get_engine
+from datetime import datetime
+
+# 1. Fetch
+with SPARQLClient() as client:
+    raw_records = fetch_audiencias(client, limit=100)
+
+# 2. Parse
+parsed = parse_all_audiencias(raw_records)
+parsed_dicts = [vars(p) for p in parsed]  # Convert to dicts
+
+# 3. Merge (dedup + match existing)
+engine = get_engine("postgresql://...")
+merge_result = merge_records(parsed_dicts, engine, tenant_code="CL")
+
+# 4. Persist
+persistence_result = persist_merge_result(engine, merge_result)
+
+# 5. Report
+report = create_report(
+    tenant_code="CL",
+    fetch_metrics=FetchMetrics(
+        audiencias_fetched=len(raw_records),
+        total_fetched=len(raw_records),
+    ),
+    merge_result=merge_result,
+    persistence_result=persistence_result,
+)
+filepath = save_report(report)
+print(f"Report saved: {filepath}")
+```
+
 ### Fetching Data
 
 ```python
-from info_lobby_sync.fetcher import SPARQLClient, fetch_all
+from services.info_lobby_sync.fetcher import SPARQLClient, fetch_all
 
-# Fetch all audiencias
+# Fetch all audiencias with pagination
 with SPARQLClient() as client:
     for audiencia in fetch_all("audiencias", batch_size=1000):
         print(audiencia["codigoURI"])
 
 # Fetch specific type with limit
-from info_lobby_sync.fetcher import fetch_viajes
+from services.info_lobby_sync.fetcher import fetch_viajes
 records = fetch_viajes(limit=100, offset=0)
 ```
 
 ### Parsing Results
 
 ```python
-from info_lobby_sync.parser import parse_audiencia
+from services.info_lobby_sync.parser import parse_audiencia
 
-# Parse single record
 parsed = parse_audiencia(raw_record)
 print(parsed.codigo_uri)
 print(parsed.pasivo.nombre)  # Parsed official name
@@ -71,10 +120,105 @@ print(parsed.activos)        # List of lobbyist names
 print(parsed.checksum)       # SHA256 for change detection
 ```
 
+### Merging Entities
+
+```python
+from services.info_lobby_sync.merge import merge_records_in_memory
+
+# In-memory merge (for testing)
+result = merge_records_in_memory(parsed_dicts)
+print(f"Persons: {len(result.persons)}")
+print(f"Orgs: {len(result.organisations)}")
+print(f"Duplicates found: {result.duplicates_found}")
+
+# With DB lookup
+from services.info_lobby_sync.merge import merge_records
+result = merge_records(parsed_dicts, engine, tenant_code="CL")
+```
+
+### Reports
+
+Reports are saved to `data/info_lobby/reports/` with timestamped filenames:
+
+```python
+from services.info_lobby_sync.report import list_reports, get_latest_report
+
+# List recent reports
+for summary in list_reports(limit=5):
+    print(f"{summary['filename']}: {summary['status']}")
+
+# Get latest report
+latest = get_latest_report()
+print(f"Last sync: {latest.status}, processed: {latest.persistence.total_processed}")
+```
+
+Sample report JSON:
+
+```json
+{
+  "timestamp": "2025-01-15T14:30:00",
+  "tenant_code": "CL",
+  "status": "ok",
+  "fetch": {
+    "audiencias_fetched": 1000,
+    "viajes_fetched": 50,
+    "donativos_fetched": 10,
+    "total_fetched": 1060
+  },
+  "merge": {
+    "persons_count": 850,
+    "orgs_count": 120,
+    "duplicates_found": 45,
+    "persons_existing": 500,
+    "persons_new": 350
+  },
+  "persistence": {
+    "persons_inserted": 350,
+    "persons_updated": 100,
+    "orgs_inserted": 80,
+    "total_processed": 530
+  },
+  "duration_seconds": 45.2,
+  "errors": []
+}
+```
+
 ## Testing
 
 ```bash
+# All tests (122 tests)
 pytest services/info_lobby_sync/tests/ -v
+
+# By module
+pytest services/info_lobby_sync/tests/test_fetcher.py -v
+pytest services/info_lobby_sync/tests/test_parser.py -v
+pytest services/info_lobby_sync/tests/test_merge.py -v
+pytest services/info_lobby_sync/tests/test_persistence.py -v
+pytest services/info_lobby_sync/tests/test_report.py -v
+```
+
+## Architecture
+
+```
+services/info_lobby_sync/
+├── __init__.py
+├── settings.py          # Pydantic configuration
+├── fetcher.py           # SPARQL client and fetch functions
+├── parser.py            # JSON → typed dataclasses
+├── merge.py             # Deduplication and entity matching
+├── persistence.py       # UPSERT to canonical DB tables
+├── report.py            # JSON metrics generation
+├── queries/             # SPARQL query templates
+│   ├── audiencias.sparql
+│   ├── viajes.sparql
+│   └── donativos.sparql
+├── tests/
+│   ├── test_fetcher.py
+│   ├── test_parser.py
+│   ├── test_merge.py
+│   ├── test_persistence.py
+│   └── test_report.py
+└── requirements.txt
 ```
 
 ## WAF Notes
