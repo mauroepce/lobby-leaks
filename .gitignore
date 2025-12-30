@@ -20,3 +20,6 @@ dist/
 coverage/
 
 /generated/prisma
+
+# Runtime data (reports, downloads, etc.)
+data/

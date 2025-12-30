@@ -80,17 +80,18 @@ make lobby-collector-test  # Run all 23 tests
 Alternative data source using SPARQL endpoint from datos.infolobby.cl:
 
 - **SPARQL**: Queries RDF graph for audiencias, viajes, donativos
-- **WAF Bypass**: Proper headers for Fortinet firewall
-- **Typed Parsing**: Date, RUT, name normalization
-- **Checksum**: SHA256 for incremental sync detection
-- **Testing**: 45 comprehensive tests
+- **Pipeline**: Fetch → Parse → Merge → Persist → Report
+- **Deduplication**: Entity matching by normalized name
+- **Persistence**: UPSERT to canonical Person/Organisation tables
+- **Reports**: JSON metrics saved to `data/info_lobby/reports/`
+- **Testing**: 122 comprehensive tests
 
 ```bash
 # Testing
-pytest services/info_lobby_sync/tests/ -v  # Run all 45 tests
+make infolobby-test  # Run all 122 tests
 ```
 
-📖 **Schema docs**: [docs/infolobby/sparql-schema.md](docs/infolobby/sparql-schema.md)
+📖 **Full docs**: [services/info_lobby_sync/README.md](services/info_lobby_sync/README.md)
 
 ### MCP Hub
 Multi-tenant microservice for document processing and OCR (JSON-RPC 2.0 over HTTP).
