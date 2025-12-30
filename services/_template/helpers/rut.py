@@ -9,13 +9,13 @@ external libraries (like python-rut) in the future if needed.
 """
 
 import re
-from typing import Protocol
+from typing import Optional, Protocol
 
 
 class RUTAdapter(Protocol):
     """Protocol for pluggable RUT validation/normalization adapters."""
 
-    def normalize(self, rut: str) -> str | None:
+    def normalize(self, rut: str) -> Optional[str]:
         """Normalize a RUT string to canonical format."""
         ...
 
@@ -27,7 +27,7 @@ class RUTAdapter(Protocol):
 class DefaultRUTAdapter:
     """Default implementation of RUT normalization and validation."""
 
-    def normalize(self, rut: str) -> str | None:
+    def normalize(self, rut: str) -> Optional[str]:
         """
         Normalize a RUT string to canonical format: <body>-<DV>
 
@@ -134,7 +134,7 @@ def set_adapter(adapter: RUTAdapter) -> None:
     _adapter = adapter
 
 
-def normalize_rut(rut: str) -> str | None:
+def normalize_rut(rut: str) -> Optional[str]:
     """
     Normalize a RUT string to canonical format.
 

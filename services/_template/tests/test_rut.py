@@ -197,11 +197,12 @@ class TestRUTAdapter:
 
     def test_can_set_custom_adapter(self):
         """Test that custom adapters can be plugged in."""
+        from typing import Optional
         from services._template.helpers.rut import set_adapter, normalize_rut
 
         # Create a mock adapter
         class MockAdapter:
-            def normalize(self, rut: str) -> str | None:
+            def normalize(self, rut: str) -> Optional[str]:
                 return "MOCKED"
 
             def validate(self, rut: str) -> bool:
