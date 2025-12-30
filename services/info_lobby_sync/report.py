@@ -277,11 +277,12 @@ def list_reports(
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
+            persistence = data.get("persistence") or {}
             summaries.append({
                 "filename": filepath.name,
                 "timestamp": data.get("timestamp"),
                 "status": data.get("status"),
-                "total_processed": data.get("persistence", {}).get("total_processed", 0),
+                "total_processed": persistence.get("total_processed", 0),
                 "errors_count": len(data.get("errors", [])),
             })
         except Exception:
