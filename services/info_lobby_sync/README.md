@@ -11,7 +11,7 @@ Fetches lobby data from InfoLobby SPARQL endpoint (datos.infolobby.cl).
 | **País** | Chile |
 | **Endpoint** | `http://datos.infolobby.cl/sparql` |
 | **Formato** | SPARQL/RDF (JSON results) |
-| **Epic** | E1.2 |
+| **Epic** | E1.2, E1.3 |
 
 ### Available Data Types
 
@@ -45,10 +45,10 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/lobbyleaks
 ## Pipeline
 
 ```
-SPARQL Endpoint → fetcher.py → parser.py → merge.py → persistence.py → report.py
-     │                │            │           │            │             │
-     └── Raw JSON     └── Typed    └── Dedup   └── UPSERT   └── JSON
-                          records      + match     to DB        metrics
+SPARQL Endpoint → fetcher.py → parser.py → events.py → merge.py → persistence.py → report.py
+     │                │            │            │           │            │             │
+     └── Raw JSON     └── Typed    └── Typed    └── Dedup   └── UPSERT   └── JSON
+                          records      events       + match     to DB        metrics
 ```
 
 ## Usage
@@ -120,6 +120,24 @@ print(parsed.activos)        # List of lobbyist names
 print(parsed.checksum)       # SHA256 for change detection
 ```
 
+### Extracting Events (E1.3)
+
+```python
+from services.info_lobby_sync.parser import parse_all_audiencias
+from services.info_lobby_sync.events import extract_events
+
+# Parse raw records
+parsed_audiencias = parse_all_audiencias(raw_records)
+
+# Extract typed events with normalized entity references
+events = extract_events(audiencias=parsed_audiencias)
+
+for event in events:
+    print(f"{event.event_type}: {event.external_id}")
+    print(f"  Pasivo: {event.pasivo_ref}")
+    print(f"  Activos: {event.activos_refs}")
+```
+
 ### Merging Entities
 
 ```python
@@ -186,7 +204,7 @@ Sample report JSON:
 ## Testing
 
 ```bash
-# All tests (122 tests)
+# All tests (167 tests)
 pytest services/info_lobby_sync/tests/ -v
 
 # By module
@@ -195,6 +213,7 @@ pytest services/info_lobby_sync/tests/test_parser.py -v
 pytest services/info_lobby_sync/tests/test_merge.py -v
 pytest services/info_lobby_sync/tests/test_persistence.py -v
 pytest services/info_lobby_sync/tests/test_report.py -v
+pytest services/info_lobby_sync/tests/test_events.py -v
 ```
 
 ## Architecture
@@ -205,6 +224,7 @@ services/info_lobby_sync/
 ├── settings.py          # Pydantic configuration
 ├── fetcher.py           # SPARQL client and fetch functions
 ├── parser.py            # JSON → typed dataclasses
+├── events.py            # Event extraction for graph (E1.3)
 ├── merge.py             # Deduplication and entity matching
 ├── persistence.py       # UPSERT to canonical DB tables
 ├── report.py            # JSON metrics generation
@@ -215,6 +235,7 @@ services/info_lobby_sync/
 ├── tests/
 │   ├── test_fetcher.py
 │   ├── test_parser.py
+│   ├── test_events.py
 │   ├── test_merge.py
 │   ├── test_persistence.py
 │   └── test_report.py
