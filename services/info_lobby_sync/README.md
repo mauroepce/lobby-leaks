@@ -45,10 +45,10 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/lobbyleaks
 ## Pipeline
 
 ```
-SPARQL Endpoint → fetcher.py → parser.py → events.py → merge.py → persistence.py → report.py
-     │                │            │            │           │            │             │
-     └── Raw JSON     └── Typed    └── Typed    └── Dedup   └── UPSERT   └── JSON
-                          records      events       + match     to DB        metrics
+SPARQL Endpoint → fetcher.py → parser.py → events.py → participation.py → merge.py → persistence.py → report.py
+     │                │            │            │              │              │            │             │
+     └── Raw JSON     └── Typed    └── Typed    └── Graph      └── Dedup      └── UPSERT   └── JSON
+                          records      events       edges          + match        to DB        metrics
 ```
 
 ## Usage
@@ -120,7 +120,7 @@ print(parsed.activos)        # List of lobbyist names
 print(parsed.checksum)       # SHA256 for change detection
 ```
 
-### Extracting Events (E1.3)
+### Extracting Events (E1.3-S1)
 
 ```python
 from services.info_lobby_sync.parser import parse_all_audiencias
@@ -137,6 +137,39 @@ for event in events:
     print(f"  Pasivo: {event.pasivo_ref}")
     print(f"  Activos: {event.activos_refs}")
 ```
+
+### Extracting Participations (E1.3-S2)
+
+```python
+from services.info_lobby_sync.events import extract_events
+from services.info_lobby_sync.participation import (
+    extract_participations,
+    load_persons_dict,
+    load_organisations_dict,
+)
+
+# 1. Extract events from parsed records
+events = extract_events(audiencias=parsed_audiencias, viajes=parsed_viajes)
+
+# 2. Load canonical entities from DB
+engine = get_engine("postgresql://...")
+persons = load_persons_dict(engine, tenant_code="CL")
+orgs = load_organisations_dict(engine, tenant_code="CL")
+
+# 3. Extract participation edges (exact name matching)
+result = extract_participations(events, persons, orgs)
+
+print(f"Created {result.total_edges} edges")
+print(f"Skipped {result.total_skipped} unmatched refs")
+print(f"Edges by role: {result.edges_by_role}")
+```
+
+Participation roles:
+- `PASIVO`: Public official in meeting/receiving gift
+- `ACTIVO`: Lobbyist in meeting
+- `REPRESENTADO`: Organisation represented in meeting
+- `FINANCIADOR`: Organisation funding travel
+- `DONANTE`: Organisation giving donation
 
 ### Merging Entities
 
@@ -204,7 +237,7 @@ Sample report JSON:
 ## Testing
 
 ```bash
-# All tests (167 tests)
+# All tests (193 tests)
 pytest services/info_lobby_sync/tests/ -v
 
 # By module
@@ -214,6 +247,7 @@ pytest services/info_lobby_sync/tests/test_merge.py -v
 pytest services/info_lobby_sync/tests/test_persistence.py -v
 pytest services/info_lobby_sync/tests/test_report.py -v
 pytest services/info_lobby_sync/tests/test_events.py -v
+pytest services/info_lobby_sync/tests/test_participation.py -v
 ```
 
 ## Architecture
@@ -224,7 +258,8 @@ services/info_lobby_sync/
 ├── settings.py          # Pydantic configuration
 ├── fetcher.py           # SPARQL client and fetch functions
 ├── parser.py            # JSON → typed dataclasses
-├── events.py            # Event extraction for graph (E1.3)
+├── events.py            # Event extraction for graph (E1.3-S1)
+├── participation.py     # Participation edges for graph (E1.3-S2)
 ├── merge.py             # Deduplication and entity matching
 ├── persistence.py       # UPSERT to canonical DB tables
 ├── report.py            # JSON metrics generation
@@ -236,6 +271,7 @@ services/info_lobby_sync/
 │   ├── test_fetcher.py
 │   ├── test_parser.py
 │   ├── test_events.py
+│   ├── test_participation.py
 │   ├── test_merge.py
 │   ├── test_persistence.py
 │   └── test_report.py
