@@ -45,10 +45,15 @@ DATABASE_URL=postgresql://user:pass@localhost:5432/lobbyleaks
 ## Pipeline
 
 ```
-SPARQL Endpoint → fetcher.py → parser.py → events.py → participation.py → merge.py → persistence.py → report.py
-     │                │            │            │              │              │            │             │
-     └── Raw JSON     └── Typed    └── Typed    └── Graph      └── Dedup      └── UPSERT   └── JSON
-                          records      events       edges          + match        to DB        metrics
+SPARQL Endpoint → fetcher.py → parser.py → events.py → participation.py → participation_persistence.py
+     │                │            │            │              │                      │
+     └── Raw JSON     └── Typed    └── Typed    └── Graph      └── UPSERT to Edge table
+                          records      events       edges
+
+                                   → merge.py → persistence.py → report.py
+                                        │            │              │
+                                        └── Dedup    └── UPSERT     └── JSON
+                                            + match      to DB          metrics
 ```
 
 ## Usage
@@ -171,6 +176,27 @@ Participation roles:
 - `FINANCIADOR`: Organisation funding travel
 - `DONANTE`: Organisation giving donation
 
+### Persisting Participations (E1.3-S3)
+
+```python
+from services.info_lobby_sync.participation_persistence import persist_participations
+
+# Persist participation edges to Edge table
+persist_result = persist_participations(result.edges, engine, tenant_code="CL")
+
+print(f"Inserted: {persist_result.inserted_edges}")
+print(f"Skipped (no event): {persist_result.skipped_missing_event}")
+print(f"Skipped (duplicate): {persist_result.skipped_duplicates}")
+print(f"By role: {persist_result.edges_by_role}")
+```
+
+Edge table conventions:
+- `eventId`: Always set (required)
+- `fromPersonId/fromOrgId`: Always NULL for participations
+- `toPersonId XOR toOrgId`: Exactly one set (XOR invariant)
+- `label`: Role (PASIVO, ACTIVO, etc.)
+- `metadata`: `{"source": "infolobby_sparql"}`
+
 ### Merging Entities
 
 ```python
@@ -237,7 +263,7 @@ Sample report JSON:
 ## Testing
 
 ```bash
-# All tests (193 tests)
+# All tests (222 tests)
 pytest services/info_lobby_sync/tests/ -v
 
 # By module
@@ -248,6 +274,7 @@ pytest services/info_lobby_sync/tests/test_persistence.py -v
 pytest services/info_lobby_sync/tests/test_report.py -v
 pytest services/info_lobby_sync/tests/test_events.py -v
 pytest services/info_lobby_sync/tests/test_participation.py -v
+pytest services/info_lobby_sync/tests/test_participation_persistence.py -v
 ```
 
 ## Architecture
@@ -255,15 +282,16 @@ pytest services/info_lobby_sync/tests/test_participation.py -v
 ```
 services/info_lobby_sync/
 ├── __init__.py
-├── settings.py          # Pydantic configuration
-├── fetcher.py           # SPARQL client and fetch functions
-├── parser.py            # JSON → typed dataclasses
-├── events.py            # Event extraction for graph (E1.3-S1)
-├── participation.py     # Participation edges for graph (E1.3-S2)
-├── merge.py             # Deduplication and entity matching
-├── persistence.py       # UPSERT to canonical DB tables
-├── report.py            # JSON metrics generation
-├── queries/             # SPARQL query templates
+├── settings.py                    # Pydantic configuration
+├── fetcher.py                     # SPARQL client and fetch functions
+├── parser.py                      # JSON → typed dataclasses
+├── events.py                      # Event extraction for graph (E1.3-S1)
+├── participation.py               # Participation edges extraction (E1.3-S2)
+├── participation_persistence.py   # Participation edges persistence (E1.3-S3)
+├── merge.py                       # Deduplication and entity matching
+├── persistence.py                 # UPSERT to canonical DB tables
+├── report.py                      # JSON metrics generation
+├── queries/                       # SPARQL query templates
 │   ├── audiencias.sparql
 │   ├── viajes.sparql
 │   └── donativos.sparql
@@ -272,6 +300,7 @@ services/info_lobby_sync/
 │   ├── test_parser.py
 │   ├── test_events.py
 │   ├── test_participation.py
+│   ├── test_participation_persistence.py
 │   ├── test_merge.py
 │   ├── test_persistence.py
 │   └── test_report.py
