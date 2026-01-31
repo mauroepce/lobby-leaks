@@ -1,13 +1,16 @@
 # SERVEL Sync Service
 
-Fetches and parses campaign financing data from Chile's SERVEL (Servicio Electoral).
+Fetches, parses, matches, and persists campaign financing data from Chile's SERVEL (Servicio Electoral).
 
 ## Overview
 
-This service handles:
-- **Data Acquisition**: Loading CSV/Excel files from local paths or remote URLs
-- **Parsing**: Converting raw records into typed `ParsedDonation` objects
-- **Normalization**: Standardizing names, RUTs, dates, and amounts for matching
+This service handles the complete SERVEL donation pipeline:
+- **Data Acquisition** (S1): Loading CSV/Excel files from local paths or remote URLs
+- **Parsing** (S1): Converting raw records into typed `ParsedDonation` objects
+- **Normalization** (S1): Standardizing names, RUTs, dates, and amounts for matching
+- **Merge** (S2): Deterministic matching against canonical entities (Person/Organisation)
+- **Orchestration** (S3): Coordinating the pipeline with DB lookups
+- **Persistence** (S4): Storing donation events and edges in the graph
 
 ## Modules
 
@@ -107,6 +110,77 @@ All aliases also accept lowercase variants.
 - European: `15.03.2021`
 - Year only: `2021` → January 1st
 
+### `merge.py`
+Deterministic matching of donations against canonical entities.
+
+```python
+from services.servel_sync.merge import merge_donations
+
+result = merge_donations(
+    donations,
+    persons_by_rut={"12345678-9": "uuid-1"},
+    persons_by_name={"juan perez": ["uuid-2"]},
+    orgs_by_rut={},
+    orgs_by_name={},
+)
+
+print(f"Matched by RUT: {result.donors_matched_by_rut}")
+print(f"Matched by name: {result.donors_matched_by_name}")
+```
+
+**Matching Rules:**
+1. **RUT** (priority) - deterministic match
+2. **Normalized name** (fallback) - only if unique match
+3. **Collision** (>1 match) - skip, no merge
+
+### `loaders.py`
+Load canonical entities from PostgreSQL into lookup dictionaries.
+
+```python
+from services.servel_sync.loaders import load_person_lookups, load_org_lookups
+
+with engine.connect() as conn:
+    persons_by_rut, persons_by_name = load_person_lookups(conn, "CL")
+    orgs_by_rut, orgs_by_name = load_org_lookups(conn, "CL")
+```
+
+### `orchestrator.py`
+Coordinate the complete pipeline.
+
+```python
+from services.servel_sync.orchestrator import run_servel_donation_sync
+
+result = run_servel_donation_sync(
+    "data/servel/donations_2021.csv",
+    engine,
+    "CL",
+)
+
+print(f"Total: {result.total_records}")
+print(f"Matched: {result.donors_matched_by_rut + result.donors_matched_by_name}")
+```
+
+### `donation_persistence.py`
+Persist merged donations as Events and Edges in the graph.
+
+```python
+from services.servel_sync.donation_persistence import persist_donation_events
+
+result = persist_donation_events(merge_result, engine, "CL")
+
+print(f"Events created: {result.events_created}")
+print(f"Donor edges: {result.donor_edges_created}")
+print(f"Candidate edges: {result.candidate_edges_created}")
+```
+
+**Persistence Rules:**
+- Event created ONLY if `candidate_person_id` exists
+- Donor edge is optional (created if donor matched)
+- Candidate edge is mandatory
+- Uses UPSERT for idempotency
+- `externalId`: `SERVEL:{checksum}`
+- Edge labels: `DONANTE`, `DONATARIO`
+
 ### `settings.py`
 Configuration via environment variables.
 
@@ -128,28 +202,55 @@ pytest services/servel_sync/tests/ -v
 # Run specific test module
 pytest services/servel_sync/tests/test_parser.py -v
 pytest services/servel_sync/tests/test_fetcher.py -v
+pytest services/servel_sync/tests/test_merge.py -v
+pytest services/servel_sync/tests/test_loaders.py -v
+pytest services/servel_sync/tests/test_orchestrator.py -v
+pytest services/servel_sync/tests/test_donation_persistence.py -v
 ```
 
 **Test Coverage:**
-- 75 tests covering fetcher and parser functionality
-- Column alias mapping
-- Amount/date parsing edge cases
-- Encoding fallback behavior
-- URL retry logic
+- `test_fetcher.py`: 19 tests (CSV/Excel, URL, retries)
+- `test_parser.py`: 56 tests (normalization, parsing, aliases)
+- `test_merge.py`: 30 tests (RUT/name matching, collisions)
+- `test_loaders.py`: 18 tests (DB lookups, validation)
+- `test_orchestrator.py`: 11 tests (pipeline coordination)
+- `test_donation_persistence.py`: 25+ tests (events, edges, idempotency)
 
 ## Architecture
 
 ```
 services/servel_sync/
 ├── __init__.py
-├── settings.py          # Pydantic configuration
-├── fetcher.py           # Data acquisition (CSV/Excel, file/URL)
-├── parser.py            # ParsedDonation dataclass & normalization
+├── settings.py              # Pydantic configuration
+├── fetcher.py               # S1: Data acquisition (CSV/Excel, file/URL)
+├── parser.py                # S1: ParsedDonation dataclass & normalization
+├── merge.py                 # S2: Deterministic matching logic
+├── loaders.py               # S3: Load entities from PostgreSQL
+├── orchestrator.py          # S3: Pipeline coordination
+├── donation_persistence.py  # S4: Persist events & edges
 ├── README.md
 └── tests/
     ├── __init__.py
-    ├── test_fetcher.py  # 19 tests
-    └── test_parser.py   # 56 tests
+    ├── test_fetcher.py
+    ├── test_parser.py
+    ├── test_merge.py
+    ├── test_loaders.py
+    ├── test_orchestrator.py
+    └── test_donation_persistence.py
+```
+
+## Pipeline Flow
+
+```
+┌─────────────┐    ┌──────────┐    ┌───────────┐    ┌──────────────┐
+│  fetcher.py │ -> │ parser.py│ -> │ merge.py  │ -> │ persistence  │
+│   (S1)      │    │   (S1)   │    │   (S2)    │    │    (S4)      │
+└─────────────┘    └──────────┘    └───────────┘    └──────────────┘
+                                         ↑
+                                   ┌───────────┐
+                                   │ loaders.py│
+                                   │   (S3)    │
+                                   └───────────┘
 ```
 
 ## Dependencies
@@ -158,5 +259,6 @@ services/servel_sync/
 - `openpyxl` - Excel file support
 - `httpx` - HTTP client for URL fetching
 - `pydantic-settings` - Configuration management
+- `sqlalchemy` - Database operations
 
 RUT utilities are imported from `services._template.helpers.rut`.
