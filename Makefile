@@ -205,6 +205,22 @@ infolobby-install: .venv/bin/python ## install info_lobby_sync dependencies
 infolobby-test: infolobby-install ## run info_lobby_sync tests
 	$(PYTEST) -q services/info_lobby_sync/tests -v
 
+# ========= Graph Refresh =========
+graph-refresh-install: .venv/bin/python ## install graph_refresh dependencies
+	$(PIP) install -r services/graph_refresh/requirements.txt 2>/dev/null || true
+
+graph-refresh-test: graph-refresh-install ## run graph_refresh tests
+	$(PYTEST) -q services/graph_refresh/tests -v
+
+graph-refresh-test-integration: graph-refresh-install db-up db-wait migrate ## run graph_refresh integration tests
+	$(PYTEST) -q services/graph_refresh/tests -v -m integration
+
+refresh-graph: graph-refresh-install export-env ## refresh graph materialized views
+	$(PY) -m services.graph_refresh.refresh_graph
+
+refresh-graph-concurrent: graph-refresh-install export-env ## refresh graph materialized views (CONCURRENTLY)
+	$(PY) -m services.graph_refresh.refresh_graph --concurrent
+
 # ========= Template Docker =========
 TEMPLATE_IMAGE ?= lobbyleaks-template
 
@@ -224,4 +240,5 @@ run-template: build-template ## run template container con .env
         mcp-build mcp-up-db mcp-run mcp-wait mcp-test-e2e mcp-curl mcp-stop mcp-down mcp-dev \
         bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test template-helpers-test \
         build-template run-template lobby-collector-install lobby-collector-test ingest-lobby \
-        infolobby-install infolobby-test
+        infolobby-install infolobby-test \
+        graph-refresh-install graph-refresh-test graph-refresh-test-integration refresh-graph refresh-graph-concurrent
