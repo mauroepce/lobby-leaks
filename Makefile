@@ -221,6 +221,22 @@ refresh-graph: graph-refresh-install export-env ## refresh graph materialized vi
 refresh-graph-concurrent: graph-refresh-install export-env ## refresh graph materialized views (CONCURRENTLY)
 	$(PY) -m services.graph_refresh.refresh_graph --concurrent
 
+# ========= API Service =========
+api-install: .venv/bin/python ## install API service dependencies
+	$(PIP) install -r apps/api/requirements.txt
+
+api-test: api-install ## run API unit tests (no DB required)
+	$(PYTEST) -q apps/api/tests -v -m "not integration"
+
+api-test-integration: api-install db-up db-wait migrate ## run API integration tests (require DB)
+	$(PYTEST) -q apps/api/tests -v -m integration
+
+api-dev: db-up db-wait ## run API service in dev mode
+	@uvicorn app.main:app --app-dir apps/api --reload --port 8001
+
+api-build: ## build API Docker image
+	@docker build -t lobbyleaks-api apps/api
+
 # ========= Template Docker =========
 TEMPLATE_IMAGE ?= lobbyleaks-template
 
@@ -241,4 +257,5 @@ run-template: build-template ## run template container con .env
         bootstrap quick verify verify-clean test-all mcp-install mcp-test template-test template-test-unit template-test-integration template-db-test template-helpers-test \
         build-template run-template lobby-collector-install lobby-collector-test ingest-lobby \
         infolobby-install infolobby-test \
-        graph-refresh-install graph-refresh-test graph-refresh-test-integration refresh-graph refresh-graph-concurrent
+        graph-refresh-install graph-refresh-test graph-refresh-test-integration refresh-graph refresh-graph-concurrent \
+        api-install api-test api-test-integration api-dev api-build

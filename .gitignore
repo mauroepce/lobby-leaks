@@ -23,3 +23,6 @@ coverage/
 
 # Runtime data (reports, downloads, etc.)
 data/
+
+# AI context (internal use only)
+AI Engineering_Context.md
