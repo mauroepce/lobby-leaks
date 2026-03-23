@@ -23,6 +23,7 @@ servers:
 paths:
   /api/v1/search:
     get:
+      security: []
       operationId: searchEntities
       summary: Search persons and organisations by name or RUT
       description: >
@@ -182,8 +183,7 @@ components:
         label:
           type: string
         rut:
-          type: string
-          nullable: true
+          type: ["string", "null"]
     Error400:
       type: object
       required: [detail]
