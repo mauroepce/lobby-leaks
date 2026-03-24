@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: LobbyLeaks RPC API
+  title: LobbyLeaks API
   version: "0.1.0"
   description: >
     Endpoint JSON‑RPC 2.0 (`/rpc2`) con cuatro acciones stub
@@ -21,6 +21,76 @@ servers:
         default: "8000"
 
 paths:
+  /api/v1/search:
+    get:
+      security: []
+      operationId: searchEntities
+      summary: Search persons and organisations by name or RUT
+      description: >
+        Case-insensitive search across Person and Organisation tables
+        by normalizedName or rut. Tenant is required via query param
+        or X-Tenant-Id header.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: Search term (matched against normalizedName and rut)
+        - name: tenant
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: "^[A-Z]{2}$"
+          description: "ISO 3166-1 alpha-2 tenant code (alternative: X-Tenant-Id header)"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: X-Tenant-Id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: "^[A-Z]{2}$"
+          description: "Tenant code via header (fallback if query param not present)"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+              examples:
+                twoResults:
+                  summary: Two matching entities
+                  value:
+                    results:
+                      - id: "550e8400-e29b-41d4-a716-446655440000"
+                        type: person
+                        label: juan perez
+                        rut: "12345678-5"
+                      - id: "550e8400-e29b-41d4-a716-446655440001"
+                        type: organisation
+                        label: empresa sa
+                        rut: "76543210-K"
+                    total: 2
+        "400":
+          description: Missing/invalid tenant or conflicting tenant values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error400"
+        "422":
+          description: Validation error (missing q, invalid limit)
+
   /rpc2:
     post:
       operationId: rpc2JsonRpc
@@ -90,6 +160,30 @@ components:
               maxLength: 2
               pattern: "^[A-Z]{2}$"
               description: Código país (ej. CL)
+    SearchResponse:
+      type: object
+      required: [results, total]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntityResult"
+        total:
+          type: integer
+    EntityResult:
+      type: object
+      required: [id, type, label]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [person, organisation]
+        label:
+          type: string
+        rut:
+          type: ["string", "null"]
     Error400:
       type: object
       required: [detail]

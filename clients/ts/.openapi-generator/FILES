@@ -2,10 +2,12 @@
 apis/DefaultApi.ts
 apis/index.ts
 index.ts
+models/EntityResult.ts
 models/Error400.ts
 models/Error501.ts
 models/JSONRPCRequest.ts
 models/JSONRPCRequestId.ts
 models/JSONRPCRequestParams.ts
+models/SearchResponse.ts
 models/index.ts
 runtime.ts

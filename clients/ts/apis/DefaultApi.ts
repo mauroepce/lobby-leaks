@@ -1,7 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * LobbyLeaks RPC API
+ * LobbyLeaks API
  * Endpoint JSON‑RPC 2.0 (`/rpc2`) con cuatro acciones stub que devuelven 501 mientras el MVP está en desarrollo. 
  *
  * The version of the OpenAPI document: 0.1.0
@@ -18,6 +18,7 @@ import type {
   Error400,
   Error501,
   JSONRPCRequest,
+  SearchResponse,
 } from '../models/index';
 import {
     Error400FromJSON,
@@ -26,10 +27,19 @@ import {
     Error501ToJSON,
     JSONRPCRequestFromJSON,
     JSONRPCRequestToJSON,
+    SearchResponseFromJSON,
+    SearchResponseToJSON,
 } from '../models/index';
 
 export interface Rpc2JsonRpcRequest {
     jSONRPCRequest: JSONRPCRequest;
+}
+
+export interface SearchEntitiesRequest {
+    q: string;
+    tenant?: string;
+    limit?: number;
+    xTenantId?: string;
 }
 
 /**
@@ -75,6 +85,60 @@ export class DefaultApi extends runtime.BaseAPI {
      */
     async rpc2JsonRpc(requestParameters: Rpc2JsonRpcRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<void> {
         await this.rpc2JsonRpcRaw(requestParameters, initOverrides);
+    }
+
+    /**
+     * Case-insensitive search across Person and Organisation tables by normalizedName or rut. Tenant is required via query param or X-Tenant-Id header. 
+     * Search persons and organisations by name or RUT
+     */
+    async searchEntitiesRaw(requestParameters: SearchEntitiesRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<SearchResponse>> {
+        if (requestParameters['q'] == null) {
+            throw new runtime.RequiredError(
+                'q',
+                'Required parameter "q" was null or undefined when calling searchEntities().'
+            );
+        }
+
+        const queryParameters: any = {};
+
+        if (requestParameters['q'] != null) {
+            queryParameters['q'] = requestParameters['q'];
+        }
+
+        if (requestParameters['tenant'] != null) {
+            queryParameters['tenant'] = requestParameters['tenant'];
+        }
+
+        if (requestParameters['limit'] != null) {
+            queryParameters['limit'] = requestParameters['limit'];
+        }
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (requestParameters['xTenantId'] != null) {
+            headerParameters['X-Tenant-Id'] = String(requestParameters['xTenantId']);
+        }
+
+
+        let urlPath = `/api/v1/search`;
+
+        const response = await this.request({
+            path: urlPath,
+            method: 'GET',
+            headers: headerParameters,
+            query: queryParameters,
+        }, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) => SearchResponseFromJSON(jsonValue));
+    }
+
+    /**
+     * Case-insensitive search across Person and Organisation tables by normalizedName or rut. Tenant is required via query param or X-Tenant-Id header. 
+     * Search persons and organisations by name or RUT
+     */
+    async searchEntities(requestParameters: SearchEntitiesRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<SearchResponse> {
+        const response = await this.searchEntitiesRaw(requestParameters, initOverrides);
+        return await response.value();
     }
 
 }
