@@ -1,7 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * LobbyLeaks RPC API
+ * LobbyLeaks API
  * Endpoint JSON‑RPC 2.0 (`/rpc2`) con cuatro acciones stub que devuelven 501 mientras el MVP está en desarrollo. 
  *
  * The version of the OpenAPI document: 0.1.0
