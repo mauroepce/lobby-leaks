@@ -88,7 +88,7 @@ export class DefaultApi extends runtime.BaseAPI {
     }
 
     /**
-     * Case-insensitive search across Person and Organisation tables by normalizedName or rut. Tenant is required via query param or X-Tenant-Id header.
+     * Case-insensitive search across Person and Organisation tables by normalizedName or rut. Tenant is required via query param or X-Tenant-Id header. 
      * Search persons and organisations by name or RUT
      */
     async searchEntitiesRaw(requestParameters: SearchEntitiesRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<SearchResponse>> {
@@ -133,7 +133,7 @@ export class DefaultApi extends runtime.BaseAPI {
     }
 
     /**
-     * Case-insensitive search across Person and Organisation tables by normalizedName or rut. Tenant is required via query param or X-Tenant-Id header.
+     * Case-insensitive search across Person and Organisation tables by normalizedName or rut. Tenant is required via query param or X-Tenant-Id header. 
      * Search persons and organisations by name or RUT
      */
     async searchEntities(requestParameters: SearchEntitiesRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<SearchResponse> {
