@@ -7,4 +7,4 @@
 
 | Module | Status | Last updated | Detail |
 |--------|--------|--------------|--------|
-| _(empty — run `/new-project <name>` to add the first one)_ | | | |
+| [01-supabase-migration](modules/01-supabase-migration/) | In progress | 2026-05-25 | Migrate DB to Supabase + load InfoLobby data |

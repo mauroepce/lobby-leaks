@@ -30,8 +30,17 @@ BEGIN
   END IF;
 END $$;
 
--- Permite que el usuario de la app pueda SET ROLE anonymous (tests/CI)
-GRANT anonymous TO lobbyleaks;
+-- Permite que el usuario de la app pueda SET ROLE anonymous (tests/CI).
+-- On Supabase, the connection user is `postgres`; on local dev, the role
+-- granting is wrapped in a DO block so it no-ops when the local app role
+-- ("lobbyleaks") isn't present.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lobbyleaks') THEN
+    EXECUTE 'GRANT anonymous TO lobbyleaks';
+  END IF;
+  EXECUTE 'GRANT anonymous TO postgres';
+END $$;
 
 -- RLS en la tabla
 ALTER TABLE "Leak" ENABLE ROW LEVEL SECURITY;
