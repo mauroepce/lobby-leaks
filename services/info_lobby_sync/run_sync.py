@@ -74,6 +74,14 @@ KIND_PARSERS = {
     "donativos": parse_all_donativos,
 }
 
+# InfoLobby runs Virtuoso, which caps `ORDER BY ... LIMIT N OFFSET M` queries
+# at M+N <= 100_000 with SR353 ("Sorted TOP clause specifies more then ... rows
+# to sort. Only 100000 are allowed."). Going past this requires keyset
+# pagination (cursor by fechaEvento DESC) — tracked as Phase 2. For now the
+# fetcher clamps each batch so the (offset+limit) stays within bounds and
+# stops cleanly when there's no room left.
+VIRTUOSO_ORDERED_MAX = 100_000
+
 
 def _to_dict(obj: Any) -> dict:
     if is_dataclass(obj):
@@ -123,6 +131,21 @@ def fetch_kind_paginated(
             limit = min(batch_size, remaining)
         else:
             limit = batch_size
+
+        # Clamp so offset+limit stays within Virtuoso's 100k ORDER-BY cap.
+        # When offset >= VIRTUOSO_ORDERED_MAX we can't ask for any more
+        # rows without hitting SR353 — stop cleanly and let the caller
+        # know (the wrapper script reads this as "kind exhausted").
+        if offset >= VIRTUOSO_ORDERED_MAX:
+            logger.info(
+                "fetch %s — hit Virtuoso ORDER BY cap at offset=%d; "
+                "stopping (Phase 2 keyset pagination needed for the rest)",
+                kind, offset,
+            )
+            break
+        room = VIRTUOSO_ORDERED_MAX - offset
+        if limit > room:
+            limit = room
 
         logger.info("fetch %s offset=%d limit=%d (have %d)", kind, offset, limit, len(all_records))
         batch = fetch_fn(client=client, limit=limit, offset=offset)
