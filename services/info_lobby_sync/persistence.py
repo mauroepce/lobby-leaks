@@ -436,12 +436,21 @@ def _extract_nombres(full_name: str) -> Optional[str]:
     return full_name
 
 
-def _extract_apellidos(full_name: str) -> Optional[str]:
-    """Extract last name(s) from full name (best effort)."""
+def _extract_apellidos(full_name: str) -> str:
+    """Extract last name(s) from a full name (best effort).
+
+    Returns an empty string for single-word names instead of None: the
+    Person.apellidos column is NOT NULL in the schema and InfoLobby has
+    a non-trivial number of entities recorded with just a first name
+    (e.g. "Paul", "Catalina"). The first full sync (commit aece0a6) hit
+    NotNullViolation on these and aborted the whole bulk-insert
+    transaction. Returning "" satisfies the constraint without
+    inventing data; downstream consumers can detect the "no last name"
+    case by checking `apellidos == ""`.
+    """
     if not full_name:
-        return None
+        return ""
     parts = full_name.strip().split()
     if len(parts) >= 2:
-        # Assume rest are apellidos
         return " ".join(parts[1:])
-    return None
+    return ""
