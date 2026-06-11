@@ -1,7 +1,7 @@
 # 01-supabase-migration — STATUS
 
-**Last updated:** 2026-06-05
-**Phase / status:** Blocked — Supabase project ref `hsbejlidtugjazuqjutd` not found in any region pooler (likely auto-paused after 7-day inactivity on free tier; project created ~2026-05-14, no activity since).
+**Last updated:** 2026-06-11
+**Phase / status:** In progress — full canonical pipeline green end-to-end against InfoLobby SPARQL. With `--limit 10` smoke: Person=25, Organisation=30, Event=30, Edge=55 (PASIVO/ACTIVO/REPRESENTADO/FINANCIADOR/DONANTE), MVs populated. Ready to write the production orchestrator and run an unbounded sync.
 
 <!--
   LIVE state. Update at the end of every productive session.
@@ -25,15 +25,31 @@ thin orchestrator script will be written during this milestone.
 [x] Switch DIRECT_URL from db.* host (IPv6-only) to Session Pooler port 5432 (IPv4-compatible)
 [x] Pin Node 20 with .nvmrc (workspace requires Node ≥18.12; user had v16 globally)
 [x] Free disk space (deleted 9.1 GB Yarn cache; was 100% full → now 13 GB free)
-[ ] Commit the .gitignore + URL-encoding + .nvmrc + module skeleton changes
-[ ] **USER**: Unpause Supabase project in dashboard (or confirm project ref / recreate in sa-east-1 if deleted)
-[ ] Re-test connection: psql "$DIRECT_URL" -c "SELECT 1;"
-[ ] Run `pnpm prisma:deploy` and verify tables + materialized views exist
-[ ] Write thin orchestrator at services/info_lobby_sync/run_sync.py (or scripts/sync_infolobby.py)
-[ ] Run InfoLobby sync end-to-end (audiencias + donativos + viajes)
-[ ] Run `make refresh-graph` to populate mv_graph_nodes / mv_graph_links
-[ ] Smoke test: count rows in Person, Organisation, Event, Edge, mv_graph_*
-[ ] Register this module's outcome in root INDEX.md
+[x] Commit toolchain pins + Leak migration fix + module skeleton (98708ca)
+[x] User unpaused Supabase project; Session Pooler started serving in ~60s after restore
+[x] Apply Prisma migrations (13 original + new 20260610 for missing `source` column)
+[x] Seed Tenant (CL, UY) + Leak + User via `scripts/seed.sql`
+[x] Install Python 3.11 via Homebrew (Intel Mac, source build ~10 min)
+[x] Create `.venv` with Python 3.11 + install `services/info_lobby_sync/requirements.txt`
+[x] Write smoke-test orchestrator at `scripts/sync_infolobby_smoke.py` (limit=10, 1 req/s)
+[x] Run smoke test → 25 Persons + 30 Organisations inserted; status=ok
+[x] Refresh materialized views → mv_graph_nodes=55, mv_graph_links=55 after full pipeline run
+[x] Wire Event persister into `info_lobby_sync`
+      → added `services/info_lobby_sync/event_persistence.py`
+      → natural key (tenantCode, externalId, kind); per-subtype fields in JSONB metadata
+[x] Fix existing bugs surfaced by smoke test:
+      → `participation.load_persons_dict / load_organisations_dict` queried `tenant_code` /
+        `normalized_name` (snake_case) against camelCase columns; rewritten with
+        `"tenantCode"` / `"normalizedName"`
+      → `participation_persistence._persist_edge` mixed psycopg `%(name)s` and
+        SQLAlchemy `:name::jsonb` placeholders; switched to `CAST(:metadata AS jsonb)`
+[ ] Write production orchestrator `services/info_lobby_sync/run_sync.py` (no `--limit`,
+    rate-limited, JSON metrics, cron-safe exit 0)
+[ ] Run full InfoLobby sync (audiencias + viajes + donativos, all pages)
+[ ] Consolidate canonical upsert into `services/canonical/` once `servel_sync` reaches the
+    same shape (third use case justifies the abstraction)
+[ ] Decide: SERVEL CSV ingest in this module or defer to a sibling module
+[ ] Register module outcome in root `INDEX.md`
 ```
 
 ## Key decisions
@@ -75,14 +91,59 @@ thin orchestrator script will be written during this milestone.
   root with `20`; `nvm use` (no args) reads it; GitHub Actions `setup-node`
   reads it; one source of truth.
 
+- **The Leak migration's `GRANT anonymous TO lobbyleaks` is wrapped in a
+  conditional `DO` block.** Reason: Supabase has no `lobbyleaks` role; the
+  unconditional grant aborted `prisma migrate deploy` with code 42704. The
+  wrapper grants to whichever of `lobbyleaks` / `postgres` actually exists
+  in the target DB. How to apply: any role-management statement in a migration
+  that targets BOTH local Docker (`lobbyleaks` user) AND Supabase (`postgres`)
+  must be guarded by `IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ...)`.
+
+- **Smoke test before full sync.** Reason: full InfoLobby sync would fetch
+  thousands of records, hit the Fortinet WAF, and write a lot to Supabase. A
+  silent bug (like the missing `source` column) wastes minutes of fetch time
+  per attempt. How to apply: any new ingestion pipeline gets a `--limit 10`
+  smoke test that exercises every stage (fetch, parse, merge, persist, count)
+  before unleashing the full thing.
+
+- **Prefer `DIRECT_URL` over `DATABASE_URL` for ad-hoc Python scripts.** Reason:
+  the transaction pooler (DATABASE_URL, port 6543) rejects `?pgbouncer=true`
+  with psycopg v3 and needs prepared-statement workarounds. The Session Pooler
+  (DIRECT_URL, port 5432) accepts vanilla SQLAlchemy + psycopg with no special
+  config. How to apply: app code that runs many short-lived queries (API
+  handlers) should still use the transaction pooler with the right config; one-
+  off scripts (sync, migrations, seeds) should use DIRECT_URL.
+
+- **Use `postgresql+psycopg://` (v3) in SQLAlchemy URLs.** Reason:
+  `info_lobby_sync/requirements.txt` installs `psycopg[binary]` (v3), not
+  `psycopg2`. SQLAlchemy's default `postgresql://` scheme reaches for psycopg2
+  and `ModuleNotFoundError` follows. How to apply: rewrite `postgresql://` →
+  `postgresql+psycopg://` at the entry point (the smoke script does this in
+  ~3 lines) — don't ask contributors to remember.
+
+- **Missing `source` column was a real schema bug, not a config issue.**
+  `services/info_lobby_sync/persistence.py` writes a `source` column on every
+  `Person`/`Organisation` upsert but no migration ever created the column. Added
+  via `20260610_add_source_to_canonical_entities` (nullable, so existing rows
+  backfill to NULL). Lesson: when persistence code references a column, grep
+  the migrations to confirm it exists — don't trust the code alone.
+
+- **Chose Option 1 (per-service event persister) over Option 2 (cross-service
+  reuse) for the event gap.** Reason: `info_lobby_sync` already has its own
+  Person/Org persister (different from `lobby_collector`'s). Adding a
+  cross-service import for only events/edges would camouflage coupling and
+  produce a mixed pattern within a single service. Per-service persister
+  completes the existing shape (persistence.py → event_persistence.py →
+  participation_persistence.py) and keeps the service self-contained. The
+  consolidation refactor remains a valid future move once `servel_sync`
+  reaches the same point (third use case justifies abstraction). How to
+  apply: when adding a new ingest service, mirror the InfoLobby per-service
+  shape until you have ≥3 services duplicating logic; only then extract.
+
 ## Blockers
 
-- **Supabase project paused or missing.** Project ref `hsbejlidtugjazuqjutd`
-  returns `tenant/user ... not found` from all three regional poolers tested
-  (`aws-1-sa-east-1`, `aws-0-us-east-1`, `aws-0-us-east-2`). Most likely the
-  free-tier auto-pause kicked in (project created 2026-05-14, no activity since
-  → exceeded 7-day inactivity threshold). User must restore from dashboard, or
-  if deleted, recreate in São Paulo and share the new connection strings.
+_None._ The canonical pipeline is unblocked end-to-end; remaining work is
+breadth (full sync, production orchestrator, SERVEL) not depth.
 
 ## Notes
 

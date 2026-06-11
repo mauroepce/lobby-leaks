@@ -221,8 +221,11 @@ def _persist_edge(
     now = datetime.utcnow()
     new_id = str(uuid.uuid4())
 
-    # UPSERT with ON CONFLICT DO NOTHING
-    # The unique constraint is on (eventId, fromPersonId, fromOrgId, toPersonId, toOrgId, label)
+    # UPSERT with ON CONFLICT DO NOTHING.
+    # The unique constraint is on (eventId, fromPersonId, fromOrgId, toPersonId, toOrgId, label).
+    # CAST(:metadata AS jsonb) — SQLAlchemy's text() parser mis-handles the
+    # postgres `::jsonb` shorthand right after a `:name` bind (treats `:jsonb`
+    # as another parameter); explicit CAST() avoids it.
     insert_query = text("""
         INSERT INTO "Edge" (
             id, "tenantCode", "eventId",
@@ -235,7 +238,7 @@ def _persist_edge(
             :id, :tenant_code, :event_id,
             NULL, NULL,
             :to_person_id, :to_org_id,
-            :label, :metadata::jsonb,
+            :label, CAST(:metadata AS jsonb),
             :created_at, :updated_at
         )
         ON CONFLICT ("eventId", "fromPersonId", "fromOrgId", "toPersonId", "toOrgId", "label")
