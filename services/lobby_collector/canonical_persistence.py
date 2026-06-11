@@ -338,34 +338,43 @@ def _upsert_event(conn, event: Dict[str, Any]) -> Dict[str, Any]:
     })
     existing = result.fetchone()
 
+    # The Event schema changed in migration 20251113_event_table_schema_fix:
+    #   fecha → date
+    #   descripcion column DROPPED; structured event detail now lives in metadata JSONB
+    # Callers can still pass `descripcion` in the event dict — we stuff it
+    # into metadata under the same key so downstream consumers can read it.
+    metadata = dict(event.get("metadata") or {})
+    descripcion = event.get("descripcion")
+    if descripcion is not None and "descripcion" not in metadata:
+        metadata["descripcion"] = descripcion
+    metadata_json = json.dumps(metadata) if metadata else None
+
     if existing:
-        # Update existing event
         update_query = text("""
             UPDATE "Event"
             SET
-                fecha = :fecha,
-                descripcion = :descripcion,
+                "date" = :date,
+                metadata = CAST(:metadata AS jsonb),
                 "updatedAt" = :updated_at
             WHERE id = :id
         """)
         conn.execute(update_query, {
             "id": existing[0],
-            "fecha": event["fecha"],
-            "descripcion": event["descripcion"],
+            "date": event.get("fecha") or event.get("date"),
+            "metadata": metadata_json,
             "updated_at": now,
         })
         return {"id": existing[0], "created": False}
 
-    # Insert new event
     insert_query = text("""
         INSERT INTO "Event" (
             id, "tenantCode", "externalId", kind,
-            fecha, descripcion,
+            "date", metadata,
             "createdAt", "updatedAt"
         )
         VALUES (
             gen_random_uuid()::text, :tenant_code, :external_id, :kind,
-            :fecha, :descripcion,
+            :date, CAST(:metadata AS jsonb),
             :created_at, :updated_at
         )
         RETURNING id
@@ -374,8 +383,8 @@ def _upsert_event(conn, event: Dict[str, Any]) -> Dict[str, Any]:
         "tenant_code": event["tenantCode"],
         "external_id": event["externalId"],
         "kind": event["kind"],
-        "fecha": event["fecha"],
-        "descripcion": event["descripcion"],
+        "date": event.get("fecha") or event.get("date"),
+        "metadata": metadata_json,
         "created_at": now,
         "updated_at": now,
     })
