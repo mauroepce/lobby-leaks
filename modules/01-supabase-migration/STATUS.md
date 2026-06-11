@@ -1,7 +1,7 @@
 # 01-supabase-migration — STATUS
 
 **Last updated:** 2026-06-11
-**Phase / status:** Wrapping up — pipeline optimized 65× (602s → 9s for 1500 records); production orchestrator + chunked full-sync wrapper shipped; latent Edge NULLs-distinct idempotency bug fixed via migration; full InfoLobby sync running in background since 16:10 UTC (PID 87180, chunks of 100k records per kind, est ~4h total).
+**Phase / status:** Migrated database from Supabase free tier to Neon Pro (sa-east-1) after Supabase hit its ~720 MB disk cap mid-sync and started rejecting `REFRESH MATERIALIZED VIEW` with "No space left on device". Full corpus (Person=84,467 / Organisation=90,237 / Event=266,867 / Edge=538,949) intact on Neon, mv_graph_nodes=441,571 and mv_graph_links=538,949 refreshed for the first time. The module name still says "supabase-migration" but it now covers any DB-hosting decision for the canonical store.
 
 <!--
   LIVE state. Update at the end of every productive session.
@@ -58,11 +58,37 @@ thin orchestrator script will be written during this milestone.
 [x] Chunked-resumable full-sync wrapper `scripts/sync_infolobby_full.sh`
       → `--offset` added to `run_sync.py` for resumable chunks
       → per-chunk metrics saved under `data/info_lobby/sync-runs/<utc>/`
-[ ] Full InfoLobby sync (running in background since 2026-06-11 16:10 UTC)
-[ ] Post-sync: refresh `mv_graph_nodes` / `mv_graph_links`, record final counts here
-[ ] Post-sync: decide whether SERVEL CSV ingest stays in this module or splits to a sibling
-[ ] Consolidate canonical upsert into `services/canonical/` once `servel_sync` reaches the
-    same shape (third use case justifies the abstraction)
+[x] Full InfoLobby sync v1 ran (CHUNK_SIZE=100k, RATE_SLEEP=0.5); the wrapper
+    correctly reported the first 100k of each kind. Discovered two bugs only
+    visible at corpus scale — fixed in PR #107:
+      → `_extract_apellidos` returned None for single-word names ("Paul",
+        "Catalina") → bulk INSERT IntegrityError → chunk-1 transaction aborted
+      → Virtuoso ORDER BY caps at offset+limit ≤ 100,000 (SR353) → chunk 2
+        silently returned 0 records, wrapper read it as "exhausted"
+[x] Full InfoLobby sync v2 (post-fixes) completed in ~36 min:
+    Person=84,467 / Organisation=90,237 / Event=266,867 / Edge=538,949
+    Edge by role: PASIVO=100k / ACTIVO=180k / REPRESENTADO=92k /
+                  FINANCIADOR=101k / DONANTE=67k
+[x] Migrated canonical store from Supabase free tier to Neon Pro (sa-east-1):
+      → Supabase hit ~720 MB disk cap; REFRESH MV started failing with ENOSPC
+      → applied Prisma migrations against Neon (15 migrations, schema +
+        anonymous role + RLS + MVs all created from scratch)
+      → `pg_dump --data-only --schema=public --no-owner --no-acl
+        --exclude-table=_prisma_migrations` from Supabase (282 MB plain SQL)
+      → `psql --single-transaction` restore on Neon (7 min)
+      → smoke test re-runs idempotent against Neon
+[x] Refreshed `mv_graph_nodes` (441,571 rows) and `mv_graph_links` (538,949 rows)
+    on Neon — first successful MV refresh against the full corpus
+[ ] Phase 2 PR: keyset pagination by `fechaEvento DESC` to fetch beyond the
+    Virtuoso 100k cap (reach the remaining ~825k audiencias + 694k viajes)
+[ ] Post-Phase-2: decide whether SERVEL CSV ingest stays in this module or
+    splits to a sibling
+[ ] Consolidate canonical upsert into `services/canonical/` once `servel_sync`
+    reaches the same shape (third use case justifies the abstraction)
+[ ] Update `apps/api/` configuration (env vars in Fly.io secrets or wherever
+    we end up deploying) to point at Neon for production
+[ ] Pause / archive the Supabase project once we confirm we don't need it
+    as a fallback for a few weeks
 [ ] Register module outcome in root `INDEX.md`
 ```
 
@@ -196,6 +222,35 @@ thin orchestrator script will be written during this milestone.
   to apply: when adding a new ingest service, set `source = '<service-
   name>'` consistently; when adding a new search-result field in
   module 02, check if `source` should be projected.
+
+- **Picked Neon Pro over Supabase Pro and Fly Postgres.** Reason: at our
+  scale (~720 MB now, projected 5 GB after SERVEL + full sync) Neon Pro
+  is cheaper than Supabase ($3-15/mo variable vs $25 flat) AND keeps us
+  on a managed Postgres with auto-backups; Fly Postgres is now
+  unmanaged (no built-in backups, no built-in pooler) and would cost
+  similar after operational time. How to apply: future managed-Postgres
+  decisions in this project should default to Neon unless we hit
+  Neon-specific limits (compute caps, sa-east region issues).
+
+- **Use `pg_dump --data-only --schema=public --no-owner --no-acl
+  --exclude-table=_prisma_migrations` for cross-managed-Postgres
+  migrations after the destination has been prepared with
+  `prisma migrate deploy`.** Reason: schema-and-data dumps mix in roles,
+  comments, and ACLs that differ across managed providers (Supabase has
+  extra schemas like `auth/storage/realtime`; Neon does not). Running
+  Prisma migrations first guarantees the destination schema is exactly
+  what the code expects; data-only pg_dump avoids all the cross-provider
+  metadata friction. Exclude `_prisma_migrations` so it doesn't conflict
+  with the rows Prisma just inserted. How to apply: any future move
+  between managed Postgres providers should follow this two-step
+  recipe — `prisma migrate deploy` first, then data-only pg_dump.
+
+- **Connection-string format is now `?sslmode=require&channel_binding=require`
+  for Neon (mandatory SCRAM channel binding).** Reason: Neon enforces
+  SCRAM-SHA-256 channel binding for security; clients that don't
+  support it will fail. psycopg v3, asyncpg, and psql all support it
+  natively. How to apply: don't strip these query parameters when
+  pasting URLs into `.env`; they're load-bearing for the connection.
 
 ## Blockers
 
