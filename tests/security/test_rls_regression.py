@@ -4,12 +4,16 @@ from dotenv import load_dotenv
 import psycopg
 from psycopg.errors import InsufficientPrivilege
 
-pytestmark = pytest.mark.rls
-
 load_dotenv()
 DSN = os.environ.get("DATABASE_URL")
-if not DSN:
-    raise RuntimeError("DATABASE_URL must be set in env to run tests")
+
+# Module-scope skipif lets pytest COLLECT this file when no DB is available
+# (the `test` job in CI runs without a DB and excludes rls-marked tests via
+# `-m "not rls"` — but that filter requires successful collection first).
+pytestmark = [
+    pytest.mark.rls,
+    pytest.mark.skipif(not DSN, reason="DATABASE_URL must be set in env to run RLS tests"),
+]
 
 # Tables where the anonymous role should NOT see anything (zero rows or no permission)
 PROTECTED_TABLES = ["Tenant", "User", "Document", "FundingRecord"]
