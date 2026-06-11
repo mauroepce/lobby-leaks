@@ -4,14 +4,19 @@ import pytest
 from dotenv import load_dotenv
 import psycopg
 
-pytestmark = pytest.mark.rls  # mark the entire module as RLS
-
 # Load .env only locally; in CI it comes via workflow env
 load_dotenv()
 
 DSN = os.environ.get("DATABASE_URL")
-if not DSN:
-    raise RuntimeError("DATABASE_URL must be set in env to run tests")
+
+# Use skipif at module scope so the file can be COLLECTED even when no DB is
+# available (the `test` job in CI runs with no DB and excludes rls-marked
+# tests via `-m "not rls"` — that filter only kicks in after collection, so
+# the previous `raise RuntimeError(...)` at import time broke collection).
+pytestmark = [
+    pytest.mark.rls,
+    pytest.mark.skipif(not DSN, reason="DATABASE_URL must be set in env to run RLS tests"),
+]
 
 def _fetch_from_view(tenant: str):
     with psycopg.connect(DSN, autocommit=True) as conn, conn.cursor() as cur:

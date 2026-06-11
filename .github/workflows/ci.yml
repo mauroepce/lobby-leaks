@@ -46,6 +46,13 @@ jobs:
       - name: Install template dependencies
         run: pip install -r services/_template/requirements.txt
       - name: Run template unit tests
+        # services/_template/settings.py declares api_key as a required
+        # field with no default; unit tests instantiate Settings() and
+        # would fail at validation without an env value here. The value
+        # is intentionally bogus — no HTTP call is made in the unit run
+        # (integration tests are excluded via -m "not integration").
+        env:
+          API_KEY: test-key-ci-unit-only
         run: make template-test-unit
 
   build-template:

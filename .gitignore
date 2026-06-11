@@ -4,12 +4,20 @@ npm-debug.log*
 
 # Python
 __pycache__/
-.env/
 *.py[cod]
 *.egg-info/
 services/mcp-hub/app/__pycache__/
 services/mcp-hub/tests/__pycache__/
 tests/__pycache__/
+.venv/
+venv/
+
+# Secrets / env files (NEVER commit these)
+.env
+.env.local
+.env.*.local
+.env.production
+!.env.example
 
 # Editor / OS
 .DS_Store

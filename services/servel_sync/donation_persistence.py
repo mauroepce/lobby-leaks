@@ -166,7 +166,7 @@ def _persist_event(
         )
         VALUES (
             :id, :external_id, :tenant_code, :kind,
-            :date, :metadata::jsonb,
+            :date, CAST(:metadata AS jsonb),
             :created_at, :updated_at
         )
         ON CONFLICT ("externalId", "tenantCode")
@@ -247,7 +247,7 @@ def _persist_donor_edge(
             :id, :tenant_code, :event_id,
             NULL, NULL,
             :to_person_id, :to_org_id,
-            :label, :metadata::jsonb,
+            :label, CAST(:metadata AS jsonb),
             :created_at, :updated_at
         )
         ON CONFLICT ("eventId", "fromPersonId", "fromOrgId", "toPersonId", "toOrgId", "label")
@@ -302,7 +302,7 @@ def _persist_candidate_edge(
             :id, :tenant_code, :event_id,
             NULL, NULL,
             :to_person_id, NULL,
-            :label, :metadata::jsonb,
+            :label, CAST(:metadata AS jsonb),
             :created_at, :updated_at
         )
         ON CONFLICT ("eventId", "fromPersonId", "fromOrgId", "toPersonId", "toOrgId", "label")

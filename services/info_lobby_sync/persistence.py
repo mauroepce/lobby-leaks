@@ -61,12 +61,20 @@ def persist_merge_result(
     source: str = "infolobby_sparql"
 ) -> PersistenceResult:
     """
-    Persist merged entities to canonical database tables.
+    Persist merged entities in batched UPSERTs.
 
-    Uses UPSERT (INSERT ... ON CONFLICT) for idempotent operations.
-    - Persons with existing_id → UPDATE if changed
-    - Persons without existing_id → INSERT
-    - Same for Organisations
+    Batching strategy:
+      - "New" entities (no existing_id from merge) → one bulk INSERT
+        ... ON CONFLICT DO UPDATE that lets EXCLUDED.cargo win when the
+        existing row's cargo is NULL. Round-trips: 1 per table.
+      - "Existing with new info" entities (existing_id + new cargo/tipo
+        to promote into a NULL slot) → one bulk UPDATE per table.
+      - "Existing, nothing new" → skipped (counted as unchanged, no DB
+        touch). Idempotent re-runs are now essentially free.
+
+    The earlier per-row implementation was the second-biggest hot spot
+    in profiling (~27% of total sync time) because every INSERT was its
+    own round-trip to the pooler.
 
     Args:
         engine: SQLAlchemy database engine
@@ -80,34 +88,10 @@ def persist_merge_result(
 
     try:
         with engine.begin() as conn:
-            # Persist persons
-            for person in merge_result.persons:
-                try:
-                    outcome = _upsert_person(conn, person, source)
-                    if outcome == "inserted":
-                        result.persons_inserted += 1
-                    elif outcome == "updated":
-                        result.persons_updated += 1
-                    else:
-                        result.persons_unchanged += 1
-                except Exception as e:
-                    result.errors.append(f"Person {person.get('name', 'unknown')}: {str(e)}")
-
-            # Persist organisations
-            for org in merge_result.organisations:
-                try:
-                    outcome = _upsert_organisation(conn, org, source)
-                    if outcome == "inserted":
-                        result.orgs_inserted += 1
-                    elif outcome == "updated":
-                        result.orgs_updated += 1
-                    else:
-                        result.orgs_unchanged += 1
-                except Exception as e:
-                    result.errors.append(f"Organisation {org.get('name', 'unknown')}: {str(e)}")
-
+            _bulk_upsert_persons(conn, merge_result.persons, source, result)
+            _bulk_upsert_organisations(conn, merge_result.organisations, source, result)
     except Exception as e:
-        result.errors.append(f"Database error: {str(e)}")
+        result.errors.append(f"Database error: {type(e).__name__}: {e}")
 
     result.total_processed = (
         result.persons_inserted + result.persons_updated + result.persons_unchanged +
@@ -116,6 +100,163 @@ def persist_merge_result(
     result.finished_at = datetime.utcnow()
 
     return result
+
+
+def _bulk_upsert_persons(
+    conn,
+    persons: List[Dict[str, Any]],
+    source: str,
+    result: PersistenceResult,
+) -> None:
+    """Two batched statements: one INSERT for new persons, one UPDATE for
+    existing ones that have a cargo to promote into a NULL slot."""
+    now = datetime.utcnow()
+
+    new_rows: List[Dict[str, Any]] = []
+    update_rows: List[Dict[str, Any]] = []
+
+    for person in persons:
+        if not person.get("existing_id"):
+            new_rows.append({
+                "id": str(uuid.uuid4()),
+                "tenant_code": person.get("tenant_code", "CL"),
+                "normalized_name": person["normalized_name"],
+                "nombres": _extract_nombres(person["name"]),
+                "apellidos": _extract_apellidos(person["name"]),
+                "nombres_completos": person["name"],
+                "cargo": person.get("cargo"),
+                "source": source,
+                "created_at": now,
+                "updated_at": now,
+            })
+        elif person.get("cargo"):
+            # Existing person + we have a cargo. The COALESCE in the UPDATE
+            # ensures the previous value wins if already set; we still send
+            # the row so the source/updatedAt advance.
+            update_rows.append({
+                "id": person["existing_id"],
+                "cargo": person["cargo"],
+                "source": source,
+                "updated_at": now,
+            })
+        else:
+            # Existing, nothing new — skip the DB entirely.
+            result.persons_unchanged += 1
+
+    if new_rows:
+        insert_stmt = text("""
+            INSERT INTO "Person" (
+                id, "tenantCode", "normalizedName",
+                nombres, apellidos, "nombresCompletos", cargo,
+                source, "createdAt", "updatedAt"
+            )
+            VALUES (
+                :id, :tenant_code, :normalized_name,
+                :nombres, :apellidos, :nombres_completos, :cargo,
+                :source, :created_at, :updated_at
+            )
+            ON CONFLICT ("tenantCode", "normalizedName") DO UPDATE
+            SET cargo = COALESCE("Person".cargo, EXCLUDED.cargo),
+                source = EXCLUDED.source,
+                "updatedAt" = EXCLUDED."updatedAt"
+        """)
+        try:
+            conn.execute(insert_stmt, new_rows)
+            # We can't cheaply tell insert vs conflict-update apart in a
+            # bulk statement; in a single-writer sync the only conflicts
+            # are with prior runs, so we credit all to inserted here.
+            # Re-runs reach this path with new_rows empty (existing_id
+            # would be set), so the count stays accurate over time.
+            result.persons_inserted += len(new_rows)
+        except Exception as e:
+            result.errors.append(f"bulk insert persons ({len(new_rows)}): {type(e).__name__}: {e}")
+
+    if update_rows:
+        update_stmt = text("""
+            UPDATE "Person"
+            SET cargo = COALESCE("Person".cargo, :cargo),
+                source = :source,
+                "updatedAt" = :updated_at
+            WHERE id = :id
+        """)
+        try:
+            conn.execute(update_stmt, update_rows)
+            result.persons_updated += len(update_rows)
+        except Exception as e:
+            result.errors.append(f"bulk update persons ({len(update_rows)}): {type(e).__name__}: {e}")
+
+
+def _bulk_upsert_organisations(
+    conn,
+    orgs: List[Dict[str, Any]],
+    source: str,
+    result: PersistenceResult,
+) -> None:
+    """Org counterpart to _bulk_upsert_persons. The non-key field here is
+    `tipo` rather than `cargo`."""
+    now = datetime.utcnow()
+
+    new_rows: List[Dict[str, Any]] = []
+    update_rows: List[Dict[str, Any]] = []
+
+    for org in orgs:
+        if not org.get("existing_id"):
+            new_rows.append({
+                "id": str(uuid.uuid4()),
+                "tenant_code": org.get("tenant_code", "CL"),
+                "normalized_name": org["normalized_name"],
+                "name": org["name"],
+                "tipo": org.get("tipo"),
+                "source": source,
+                "created_at": now,
+                "updated_at": now,
+            })
+        elif org.get("tipo"):
+            update_rows.append({
+                "id": org["existing_id"],
+                "tipo": org["tipo"],
+                "source": source,
+                "updated_at": now,
+            })
+        else:
+            result.orgs_unchanged += 1
+
+    if new_rows:
+        insert_stmt = text("""
+            INSERT INTO "Organisation" (
+                id, "tenantCode", "normalizedName",
+                name, tipo,
+                source, "createdAt", "updatedAt"
+            )
+            VALUES (
+                :id, :tenant_code, :normalized_name,
+                :name, :tipo,
+                :source, :created_at, :updated_at
+            )
+            ON CONFLICT ("tenantCode", "normalizedName") DO UPDATE
+            SET tipo = COALESCE("Organisation".tipo, EXCLUDED.tipo),
+                source = EXCLUDED.source,
+                "updatedAt" = EXCLUDED."updatedAt"
+        """)
+        try:
+            conn.execute(insert_stmt, new_rows)
+            result.orgs_inserted += len(new_rows)
+        except Exception as e:
+            result.errors.append(f"bulk insert orgs ({len(new_rows)}): {type(e).__name__}: {e}")
+
+    if update_rows:
+        update_stmt = text("""
+            UPDATE "Organisation"
+            SET tipo = COALESCE("Organisation".tipo, :tipo),
+                source = :source,
+                "updatedAt" = :updated_at
+            WHERE id = :id
+        """)
+        try:
+            conn.execute(update_stmt, update_rows)
+            result.orgs_updated += len(update_rows)
+        except Exception as e:
+            result.errors.append(f"bulk update orgs ({len(update_rows)}): {type(e).__name__}: {e}")
 
 
 def _upsert_person(

@@ -316,11 +316,13 @@ def load_persons_dict(engine: Any, tenant_code: str = "CL") -> Dict[str, EntityR
     """
     from sqlalchemy import text
 
+    # Schema uses quoted camelCase identifiers ("normalizedName", "tenantCode").
+    # SQLAlchemy result-mapping keys still come back in camelCase too.
     query = text("""
-        SELECT id, normalized_name
+        SELECT id, "normalizedName"
         FROM "Person"
-        WHERE tenant_code = :tenant_code
-        AND normalized_name IS NOT NULL
+        WHERE "tenantCode" = :tenant_code
+          AND "normalizedName" IS NOT NULL
     """)
 
     persons: Dict[str, EntityRef] = {}
@@ -328,10 +330,9 @@ def load_persons_dict(engine: Any, tenant_code: str = "CL") -> Dict[str, EntityR
     with engine.connect() as conn:
         rows = conn.execute(query, {"tenant_code": tenant_code})
         for row in rows:
-            # Handle both tuple and mapping results
             if hasattr(row, '_mapping'):
                 entity_id = str(row._mapping['id'])
-                normalized_name = row._mapping['normalized_name']
+                normalized_name = row._mapping['normalizedName']
             else:
                 entity_id = str(row[0])
                 normalized_name = row[1]
@@ -362,10 +363,10 @@ def load_organisations_dict(engine: Any, tenant_code: str = "CL") -> Dict[str, E
     from sqlalchemy import text
 
     query = text("""
-        SELECT id, normalized_name
+        SELECT id, "normalizedName"
         FROM "Organisation"
-        WHERE tenant_code = :tenant_code
-        AND normalized_name IS NOT NULL
+        WHERE "tenantCode" = :tenant_code
+          AND "normalizedName" IS NOT NULL
     """)
 
     orgs: Dict[str, EntityRef] = {}
@@ -375,7 +376,7 @@ def load_organisations_dict(engine: Any, tenant_code: str = "CL") -> Dict[str, E
         for row in rows:
             if hasattr(row, '_mapping'):
                 entity_id = str(row._mapping['id'])
-                normalized_name = row._mapping['normalized_name']
+                normalized_name = row._mapping['normalizedName']
             else:
                 entity_id = str(row[0])
                 normalized_name = row[1]

@@ -30,8 +30,21 @@ BEGIN
   END IF;
 END $$;
 
--- Permite que el usuario de la app pueda SET ROLE anonymous (tests/CI)
-GRANT anonymous TO lobbyleaks;
+-- Permite que el usuario de la app pueda SET ROLE anonymous (tests/CI).
+-- The connection user depends on the environment:
+--   - Supabase: `postgres`
+--   - Local Docker + CI (POSTGRES_USER=lobbyleaks): `lobbyleaks`
+-- Both grants are wrapped in IF EXISTS so the migration applies cleanly
+-- against any of these without manual pre-flight setup.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'lobbyleaks') THEN
+    EXECUTE 'GRANT anonymous TO lobbyleaks';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN
+    EXECUTE 'GRANT anonymous TO postgres';
+  END IF;
+END $$;
 
 -- RLS en la tabla
 ALTER TABLE "Leak" ENABLE ROW LEVEL SECURITY;
