@@ -117,11 +117,15 @@ def persist_events(
     tenant_code: str = "CL",
 ) -> EventPersistResult:
     """
-    UPSERT events into the Event table.
+    Batched UPSERT into the Event table.
 
-    Idempotent on the natural key (tenantCode, externalId, kind). On conflict
-    the row's date + metadata are refreshed (source data may add fields the
-    first ingest didn't have).
+    Idempotent on the natural key (tenantCode, externalId, kind). On
+    conflict the row's date + metadata are refreshed (source data may
+    add fields the first ingest didn't have).
+
+    Single bulk INSERT statement plus one pre-flight SELECT to classify
+    rows as inserted vs updated for the metrics. The earlier per-event
+    INSERT was about 16% of total sync time at the pooler RTT we have.
 
     Args:
         engine: SQLAlchemy engine
@@ -139,8 +143,49 @@ def persist_events(
         result.finished_at = datetime.utcnow()
         return result
 
-    insert_sql = text(
-        """
+    # Build the parameter rows up front; skip events with no external_id.
+    now = datetime.utcnow()
+    rows: List[Dict[str, Any]] = []
+    for event in events:
+        if not event.external_id:
+            result.skipped += 1
+            continue
+        rows.append({
+            "id": str(uuid.uuid4()),
+            "tenant_code": tenant_code,
+            "external_id": event.external_id,
+            "kind": _kind_for(event),
+            "date": event.date_start,
+            "metadata": json.dumps(_build_metadata(event)),
+            "now": now,
+        })
+
+    if not rows:
+        result.finished_at = datetime.utcnow()
+        return result
+
+    # Pre-flight: which (externalId, kind) pairs already exist? One
+    # round-trip for the whole batch, used to populate accurate
+    # inserted/updated counts after the bulk upsert.
+    existing_keys: set[tuple] = set()
+    try:
+        with engine.connect() as conn:
+            lookup_sql = text("""
+                SELECT "externalId", kind FROM "Event"
+                WHERE "tenantCode" = :tenant_code
+                  AND "externalId" = ANY(:ext_ids)
+            """)
+            ext_ids = list({r["external_id"] for r in rows})
+            cursor = conn.execute(
+                lookup_sql, {"tenant_code": tenant_code, "ext_ids": ext_ids}
+            )
+            existing_keys = {(row[0], row[1]) for row in cursor}
+    except Exception as e:
+        # Lookup failure isn't fatal — we'll still upsert; the metrics
+        # just lose the inserted/updated breakdown for this run.
+        result.errors.append(f"event pre-flight lookup: {type(e).__name__}: {e}")
+
+    upsert_sql = text("""
         INSERT INTO "Event" (
             id, "tenantCode", "externalId", kind,
             "date", metadata,
@@ -155,44 +200,40 @@ def persist_events(
         SET "date" = EXCLUDED."date",
             metadata = EXCLUDED.metadata,
             "updatedAt" = EXCLUDED."updatedAt"
-        RETURNING id, (xmax = 0) AS inserted
-        """
-    )
+    """)
 
     try:
         with engine.begin() as conn:
-            for event in events:
-                if not event.external_id:
-                    result.skipped += 1
-                    continue
-
-                kind = _kind_for(event)
-                params = {
-                    "id": str(uuid.uuid4()),
-                    "tenant_code": tenant_code,
-                    "external_id": event.external_id,
-                    "kind": kind,
-                    "date": event.date_start,
-                    "metadata": json.dumps(_build_metadata(event)),
-                    "now": datetime.utcnow(),
-                }
-                try:
-                    row = conn.execute(insert_sql, params).fetchone()
-                    if row is None:
-                        result.skipped += 1
-                        continue
-                    db_id, was_inserted = row[0], bool(row[1])
-                    result.event_ids[event.external_id] = db_id
-                    if was_inserted:
-                        result.inserted += 1
-                    else:
-                        result.updated += 1
-                except Exception as e:
-                    result.errors.append(
-                        f"Event {event.external_id} ({kind}): {type(e).__name__}: {e}"
-                    )
+            conn.execute(upsert_sql, rows)
     except Exception as e:
-        result.errors.append(f"Database error: {type(e).__name__}: {e}")
+        result.errors.append(f"event bulk upsert ({len(rows)}): {type(e).__name__}: {e}")
+        result.finished_at = datetime.utcnow()
+        return result
+
+    for row in rows:
+        key = (row["external_id"], row["kind"])
+        if key in existing_keys:
+            result.updated += 1
+        else:
+            result.inserted += 1
+
+    # Map external_id → db_id for downstream participation persistence.
+    # The DB id is either the freshly generated uuid (if inserted) or
+    # whatever Postgres has (if updated); read both back with one SELECT.
+    try:
+        with engine.connect() as conn:
+            ext_ids = list({r["external_id"] for r in rows})
+            id_sql = text("""
+                SELECT "externalId", id FROM "Event"
+                WHERE "tenantCode" = :tenant_code
+                  AND "externalId" = ANY(:ext_ids)
+            """)
+            cursor = conn.execute(
+                id_sql, {"tenant_code": tenant_code, "ext_ids": ext_ids}
+            )
+            result.event_ids = {row[0]: row[1] for row in cursor}
+    except Exception as e:
+        result.errors.append(f"event id readback: {type(e).__name__}: {e}")
 
     result.finished_at = datetime.utcnow()
     return result

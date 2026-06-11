@@ -234,6 +234,50 @@ def lookup_organisation_by_name(
     return row[0] if row else None
 
 
+def bulk_lookup_persons_by_names(
+    conn,
+    normalized_names: List[str],
+    tenant_code: str = "CL",
+) -> Dict[str, str]:
+    """Resolve many normalized names to Person ids in a single round-trip.
+
+    Profiling showed merge_records spending ~25% of total sync time on
+    per-name SELECTs; this collapses N round-trips into 1. The pooler's
+    network RTT (~30ms) dominated each lookup, so this is the cheapest
+    big win in the pipeline.
+    """
+    if not normalized_names:
+        return {}
+    query = text("""
+        SELECT id, "normalizedName" FROM "Person"
+        WHERE "tenantCode" = :tenant_code
+          AND "normalizedName" = ANY(:names)
+    """)
+    rows = conn.execute(
+        query, {"tenant_code": tenant_code, "names": list(normalized_names)}
+    )
+    return {row[1]: row[0] for row in rows}
+
+
+def bulk_lookup_organisations_by_names(
+    conn,
+    normalized_names: List[str],
+    tenant_code: str = "CL",
+) -> Dict[str, str]:
+    """Org counterpart to bulk_lookup_persons_by_names."""
+    if not normalized_names:
+        return {}
+    query = text("""
+        SELECT id, "normalizedName" FROM "Organisation"
+        WHERE "tenantCode" = :tenant_code
+          AND "normalizedName" = ANY(:names)
+    """)
+    rows = conn.execute(
+        query, {"tenant_code": tenant_code, "names": list(normalized_names)}
+    )
+    return {row[1]: row[0] for row in rows}
+
+
 def merge_records(
     records: List[Dict[str, Any]],
     engine: Engine,
@@ -262,64 +306,69 @@ def merge_records(
     seen_orgs: Dict[str, Dict[str, Any]] = {}
 
     duplicates_found = 0
+
+    # Pass 1 — extract everything in memory, no DB. Deduplication of names
+    # seen multiple times in the input is purely in-memory; no per-record
+    # round-trip.
+    for record in records:
+        if hasattr(record, "__dataclass_fields__"):
+            record_dict = _dataclass_to_dict(record)
+        else:
+            record_dict = record
+
+        for person in extract_persons_from_record(record_dict):
+            norm_name = person["normalized_name"]
+            if not norm_name:
+                continue
+            if norm_name in seen_persons:
+                duplicates_found += 1
+                _merge_person_fields(seen_persons[norm_name], person)
+            else:
+                seen_persons[norm_name] = person
+
+        for org in extract_organisations_from_record(record_dict):
+            norm_name = org["normalized_name"]
+            if not norm_name:
+                continue
+            if norm_name in seen_orgs:
+                duplicates_found += 1
+                _merge_org_fields(seen_orgs[norm_name], org)
+            else:
+                seen_orgs[norm_name] = org
+
+    # Pass 2 — one bulk SELECT per table to learn which names already
+    # exist in the canonical store. Two round-trips total, instead of
+    # one per unique name.
+    with engine.connect() as conn:
+        person_id_map = bulk_lookup_persons_by_names(
+            conn, list(seen_persons.keys()), tenant_code
+        )
+        org_id_map = bulk_lookup_organisations_by_names(
+            conn, list(seen_orgs.keys()), tenant_code
+        )
+
+    # Pass 3 — stamp existing_id + tenant_code, count new vs existing.
     persons_existing = 0
     persons_new = 0
+    for norm_name, person in seen_persons.items():
+        existing_id = person_id_map.get(norm_name)
+        person["existing_id"] = existing_id
+        person["tenant_code"] = tenant_code
+        if existing_id:
+            persons_existing += 1
+        else:
+            persons_new += 1
+
     orgs_existing = 0
     orgs_new = 0
-
-    with engine.connect() as conn:
-        for record in records:
-            # Convert dataclass to dict if needed
-            if hasattr(record, "__dataclass_fields__"):
-                record_dict = _dataclass_to_dict(record)
-            else:
-                record_dict = record
-
-            # Extract and merge persons
-            for person in extract_persons_from_record(record_dict):
-                norm_name = person["normalized_name"]
-                if not norm_name:
-                    continue
-
-                if norm_name in seen_persons:
-                    # Duplicate within batch - merge fields
-                    duplicates_found += 1
-                    _merge_person_fields(seen_persons[norm_name], person)
-                else:
-                    # Check database
-                    existing_id = lookup_person_by_name(conn, norm_name, tenant_code)
-                    person["existing_id"] = existing_id
-                    person["tenant_code"] = tenant_code
-
-                    if existing_id:
-                        persons_existing += 1
-                    else:
-                        persons_new += 1
-
-                    seen_persons[norm_name] = person
-
-            # Extract and merge organisations
-            for org in extract_organisations_from_record(record_dict):
-                norm_name = org["normalized_name"]
-                if not norm_name:
-                    continue
-
-                if norm_name in seen_orgs:
-                    # Duplicate within batch
-                    duplicates_found += 1
-                    _merge_org_fields(seen_orgs[norm_name], org)
-                else:
-                    # Check database
-                    existing_id = lookup_organisation_by_name(conn, norm_name, tenant_code)
-                    org["existing_id"] = existing_id
-                    org["tenant_code"] = tenant_code
-
-                    if existing_id:
-                        orgs_existing += 1
-                    else:
-                        orgs_new += 1
-
-                    seen_orgs[norm_name] = org
+    for norm_name, org in seen_orgs.items():
+        existing_id = org_id_map.get(norm_name)
+        org["existing_id"] = existing_id
+        org["tenant_code"] = tenant_code
+        if existing_id:
+            orgs_existing += 1
+        else:
+            orgs_new += 1
 
     return MergeResult(
         persons=list(seen_persons.values()),

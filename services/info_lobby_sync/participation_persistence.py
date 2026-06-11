@@ -157,30 +157,102 @@ def persist_participations(
 
     try:
         with engine.begin() as conn:
-            # Load events lookup
+            # Single SELECT for the event lookup table; the per-edge
+            # implementation used it identically so this stays.
             events_lookup = _load_events_dict(conn, tenant_code)
 
+            # Build the parameter rows in Python; resolve eventId from
+            # the lookup, count missing_event misses here, and pre-track
+            # the per-role attempts. The earlier per-edge INSERT was the
+            # single biggest hot spot (~30% of sync time) at the pooler
+            # RTT we have — this collapses N round-trips into 1.
+            rows: List[Dict[str, Any]] = []
+            now = datetime.utcnow()
+            attempted_by_role: Dict[str, int] = {}
             for edge in edges:
+                kind = _map_event_type_to_kind(edge.event_type)
+                event_id = events_lookup.get(f"{edge.event_external_id}:{kind}")
+                if not event_id:
+                    result.skipped_missing_event += 1
+                    continue
+
+                if edge.entity_type == "person":
+                    to_person_id, to_org_id = edge.entity_id, None
+                elif edge.entity_type == "organisation":
+                    to_person_id, to_org_id = None, edge.entity_id
+                else:
+                    result.errors.append(
+                        f"Edge {edge.event_external_id}->{edge.entity_id}: "
+                        f"invalid entity_type {edge.entity_type!r}"
+                    )
+                    continue
+
+                rows.append({
+                    "id": str(uuid.uuid4()),
+                    "tenant_code": tenant_code,
+                    "event_id": event_id,
+                    "to_person_id": to_person_id,
+                    "to_org_id": to_org_id,
+                    "label": edge.role,
+                    "metadata": json.dumps({"source": edge.source}),
+                    "now": now,
+                })
+                attempted_by_role[edge.role] = attempted_by_role.get(edge.role, 0) + 1
+
+            if rows:
+                # No RETURNING — SQLAlchemy's executemany path closes the
+                # result cursor before we can iterate it ("ResourceClosed
+                # Error"). Instead, diff a count(*) before and after the
+                # bulk INSERT to learn how many were actually inserted vs
+                # conflict-skipped. Two cheap aggregate queries beat 580
+                # row-level inserts even after the cost of the count diff.
+                count_sql = text(
+                    'SELECT count(*) FROM "Edge" WHERE "tenantCode" = :tc'
+                )
+                count_before = conn.execute(
+                    count_sql, {"tc": tenant_code}
+                ).scalar_one()
+
+                insert_sql = text("""
+                    INSERT INTO "Edge" (
+                        id, "tenantCode", "eventId",
+                        "fromPersonId", "fromOrgId",
+                        "toPersonId", "toOrgId",
+                        label, metadata,
+                        "createdAt", "updatedAt"
+                    )
+                    VALUES (
+                        :id, :tenant_code, :event_id,
+                        NULL, NULL,
+                        :to_person_id, :to_org_id,
+                        :label, CAST(:metadata AS jsonb),
+                        :now, :now
+                    )
+                    ON CONFLICT ("eventId", "fromPersonId", "fromOrgId",
+                                 "toPersonId", "toOrgId", "label")
+                    DO NOTHING
+                """)
                 try:
-                    outcome = _persist_edge(conn, edge, events_lookup, tenant_code)
-
-                    if outcome == "inserted":
-                        result.inserted_edges += 1
-                        # Track by role
-                        role = edge.role
-                        result.edges_by_role[role] = result.edges_by_role.get(role, 0) + 1
-                    elif outcome == "missing_event":
-                        result.skipped_missing_event += 1
-                    elif outcome == "duplicate":
-                        result.skipped_duplicates += 1
-
+                    conn.execute(insert_sql, rows)
+                    count_after = conn.execute(
+                        count_sql, {"tc": tenant_code}
+                    ).scalar_one()
+                    result.inserted_edges = count_after - count_before
+                    result.skipped_duplicates = (
+                        len(rows) - result.inserted_edges
+                    )
+                    # Per-role breakdown reports ATTEMPTED inserts (before
+                    # conflict dedup). On a fresh DB this equals inserted;
+                    # on re-runs it overstates, which we surface honestly.
+                    result.edges_by_role = attempted_by_role
                 except Exception as e:
                     result.errors.append(
-                        f"Edge {edge.event_external_id}->{edge.entity_id}: {str(e)}"
+                        f"bulk insert edges ({len(rows)}): "
+                        f"{type(e).__name__}: {e}"
                     )
 
     except Exception as e:
-        result.errors.append(f"Database error: {str(e)}")
+        result.errors.append(f"Database error: {type(e).__name__}: {e}")
 
     result.finished_at = datetime.utcnow()
     return result
