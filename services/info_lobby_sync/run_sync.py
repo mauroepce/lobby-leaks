@@ -98,8 +98,14 @@ def fetch_kind_paginated(
     batch_size: int,
     max_records: int | None,
     rate_sleep: float,
+    start_offset: int = 0,
 ) -> List[Dict[str, Any]]:
     """Loop SPARQL pages until exhausted or `max_records` cap is hit.
+
+    `start_offset` lets the caller resume part-way through the corpus
+    (chunked syncs use this to avoid OOM on the 1M+ record sets). The
+    `max_records` cap still applies AFTER `start_offset` — fetch returns
+    at most `max_records` records, starting from position `start_offset`.
 
     Rate-limited between batches to be polite to the InfoLobby WAF.
     Each batch fetched is logged so a long-running sync produces visible
@@ -107,7 +113,7 @@ def fetch_kind_paginated(
     """
     fetch_fn = KIND_FETCHERS[kind]
     all_records: List[Dict[str, Any]] = []
-    offset = 0
+    offset = start_offset
 
     while True:
         if max_records is not None:
@@ -165,6 +171,7 @@ def run_pipeline(args: argparse.Namespace) -> Dict[str, Any]:
         "config": {
             "batch_size": args.batch_size,
             "max_records": args.max_records,
+            "offset": args.offset,
             "rate_sleep": args.rate_sleep,
             "dry_run": args.dry_run,
         },
@@ -186,6 +193,7 @@ def run_pipeline(args: argparse.Namespace) -> Dict[str, Any]:
                     batch_size=args.batch_size,
                     max_records=args.max_records,
                     rate_sleep=args.rate_sleep,
+                    start_offset=args.offset,
                 )
                 metrics["fetched"][kind] = len(raw[kind])
                 if args.rate_sleep > 0:
@@ -341,6 +349,13 @@ def parse_args(argv: List[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Cap PER KIND. None = full sync (default: unlimited)",
+    )
+    p.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Starting SPARQL offset PER KIND, for chunked / resumable syncs "
+             "(default: 0). Combine with --max-records to bound a chunk.",
     )
     p.add_argument(
         "--rate-sleep",
