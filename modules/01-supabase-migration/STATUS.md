@@ -1,7 +1,7 @@
 # 01-supabase-migration — STATUS
 
 **Last updated:** 2026-06-11
-**Phase / status:** In progress — full canonical pipeline green end-to-end against InfoLobby SPARQL. With `--limit 10` smoke: Person=25, Organisation=30, Event=30, Edge=55 (PASIVO/ACTIVO/REPRESENTADO/FINANCIADOR/DONANTE), MVs populated. Ready to write the production orchestrator and run an unbounded sync.
+**Phase / status:** Wrapping up — pipeline optimized 65× (602s → 9s for 1500 records); production orchestrator + chunked full-sync wrapper shipped; latent Edge NULLs-distinct idempotency bug fixed via migration; full InfoLobby sync running in background since 16:10 UTC (PID 87180, chunks of 100k records per kind, est ~4h total).
 
 <!--
   LIVE state. Update at the end of every productive session.
@@ -33,22 +33,36 @@ thin orchestrator script will be written during this milestone.
 [x] Create `.venv` with Python 3.11 + install `services/info_lobby_sync/requirements.txt`
 [x] Write smoke-test orchestrator at `scripts/sync_infolobby_smoke.py` (limit=10, 1 req/s)
 [x] Run smoke test → 25 Persons + 30 Organisations inserted; status=ok
-[x] Refresh materialized views → mv_graph_nodes=55, mv_graph_links=55 after full pipeline run
-[x] Wire Event persister into `info_lobby_sync`
-      → added `services/info_lobby_sync/event_persistence.py`
-      → natural key (tenantCode, externalId, kind); per-subtype fields in JSONB metadata
-[x] Fix existing bugs surfaced by smoke test:
-      → `participation.load_persons_dict / load_organisations_dict` queried `tenant_code` /
-        `normalized_name` (snake_case) against camelCase columns; rewritten with
-        `"tenantCode"` / `"normalizedName"`
-      → `participation_persistence._persist_edge` mixed psycopg `%(name)s` and
-        SQLAlchemy `:name::jsonb` placeholders; switched to `CAST(:metadata AS jsonb)`
-[ ] Write production orchestrator `services/info_lobby_sync/run_sync.py` (no `--limit`,
-    rate-limited, JSON metrics, cron-safe exit 0)
-[ ] Run full InfoLobby sync (audiencias + viajes + donativos, all pages)
+[x] Refresh materialized views → mv_graph_nodes=55, mv_graph_links=55 after smoke pipeline
+[x] Wire Event persister into `info_lobby_sync` (`event_persistence.persist_events`)
+[x] Fix snake_case/camelCase bug in `participation.load_persons_dict` / `load_organisations_dict`
+[x] Fix `:metadata::jsonb` SQLAlchemy bind-parsing bug in `participation_persistence._persist_edge`
+[x] Audit pass via Haiku sub-agents found 5 latent bugs in sibling services
+      → 3 `:metadata::jsonb` instances in `servel_sync/donation_persistence.py`
+      → `lobby_collector/canonical_persistence.py` UPDATE+INSERT referenced removed
+        columns `fecha`/`descripcion` (migration 20251113 had renamed/dropped them)
+      → all fixed in commit `d8b5fb0`
+[x] Write production orchestrator `services/info_lobby_sync/run_sync.py`
+      → argparse CLI (`--tenant`, `--batch-size`, `--max-records`, `--offset`,
+        `--rate-sleep`, `--dry-run`, `--output`, `--debug`)
+      → per-stage timing instrumentation, JSON metrics, exit 0 (cron-safe)
+[x] Optimize the 4 DB-bound stages → 65× overall speedup
+      → `merge_records` 154.6s → 1.5s (bulk lookup ANY(:names))
+      → `persist_persons_orgs` 161.2s → 0.5s (executemany INSERT + UPDATE buckets)
+      → `persist_events` 94.0s → 1.0s (bulk INSERT ON CONFLICT + pre-flight SELECT)
+      → `persist_edges` 180.0s → 0.6s (bulk INSERT ON CONFLICT + count(*) diff)
+[x] Fix the latent Edge UNIQUE-with-NULLS bug — migration `20260611_edge_unique_nulls_not_distinct`
+      → cleaned 9,393 duplicate rows (12,320 → 2,927)
+      → dropped old constraint, added `Edge_logical_nnd_uniq` UNIQUE NULLS NOT DISTINCT
+      → verified idempotency: two consecutive runs, second one inserts 0 rows
+[x] Chunked-resumable full-sync wrapper `scripts/sync_infolobby_full.sh`
+      → `--offset` added to `run_sync.py` for resumable chunks
+      → per-chunk metrics saved under `data/info_lobby/sync-runs/<utc>/`
+[ ] Full InfoLobby sync (running in background since 2026-06-11 16:10 UTC)
+[ ] Post-sync: refresh `mv_graph_nodes` / `mv_graph_links`, record final counts here
+[ ] Post-sync: decide whether SERVEL CSV ingest stays in this module or splits to a sibling
 [ ] Consolidate canonical upsert into `services/canonical/` once `servel_sync` reaches the
     same shape (third use case justifies the abstraction)
-[ ] Decide: SERVEL CSV ingest in this module or defer to a sibling module
 [ ] Register module outcome in root `INDEX.md`
 ```
 
@@ -139,6 +153,41 @@ thin orchestrator script will be written during this milestone.
   reaches the same point (third use case justifies abstraction). How to
   apply: when adding a new ingest service, mirror the InfoLobby per-service
   shape until you have ≥3 services duplicating logic; only then extract.
+
+- **Pre-flight Haiku audits before scaling code that just got fixed.** After
+  fixing 3 bug classes in `info_lobby_sync`, three parallel Haiku sub-agents
+  scanned `lobby_collector` and `servel_sync` for the same patterns and
+  found 5 more BREAKING latent bugs — all surfaced before the next sync
+  would have hit them. Reason: low-cost preventive sweep beats debugging
+  the same patterns in a different file weeks later. How to apply: every
+  time you fix a bug class in one place, ask whether sibling services
+  share the pattern; if yes, audit them in parallel with cheap models.
+
+- **Batched DB ops + idempotency-safe re-runs unlock chunked syncs.** The
+  Person/Org/Event/Edge persisters now do at most 2-3 round-trips per
+  stage regardless of batch size (bulk lookups + executemany INSERT ON
+  CONFLICT). Combined with the NULL-safe Edge constraint, a chunk re-run
+  with the same offset just no-ops, so the full sync runs as a bash loop
+  of bounded-memory chunks (~600 MB peak at CHUNK_SIZE=100k vs. ~5 GB if
+  loaded all at once). How to apply: any high-cardinality ingest service
+  should default to bulk lookups + INSERT ON CONFLICT and verify
+  idempotency with a 2-run smoke; if the second run touches rows, the
+  unique constraint is wrong.
+
+- **The Edge UNIQUE constraint must use `NULLS NOT DISTINCT`.** Reason:
+  every participation edge has `fromPersonId = fromOrgId = NULL`, so
+  Postgres' default NULLS-DISTINCT semantics treated each one as unique.
+  Every sync re-run silently duplicated the entire edge set; profiling
+  surfaced this only after the 65× speedup made re-runs frequent. Fixed
+  via migration `20260611_edge_unique_nulls_not_distinct`. How to apply:
+  any constraint covering columns that are nullable-by-design needs
+  `NULLS NOT DISTINCT` (Postgres 15+; Supabase is on 17.6).
+
+- **Postgres connection-string passwords with special chars must be
+  URL-encoded, AND the migration's role-management statements must be
+  guarded.** Both already documented above; flagging here that they are
+  load-bearing for the project's reproducibility — the next contributor
+  cloning the repo would hit both within 5 minutes.
 
 ## Blockers
 
