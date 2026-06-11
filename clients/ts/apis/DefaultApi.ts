@@ -17,6 +17,7 @@ import * as runtime from '../runtime';
 import type {
   Error400,
   Error501,
+  GraphResponse,
   JSONRPCRequest,
   SearchResponse,
 } from '../models/index';
@@ -25,11 +26,21 @@ import {
     Error400ToJSON,
     Error501FromJSON,
     Error501ToJSON,
+    GraphResponseFromJSON,
+    GraphResponseToJSON,
     JSONRPCRequestFromJSON,
     JSONRPCRequestToJSON,
     SearchResponseFromJSON,
     SearchResponseToJSON,
 } from '../models/index';
+
+export interface GraphSubgraphRequest {
+    center: string;
+    depth?: number;
+    limitEvents?: number;
+    tenant?: string;
+    xTenantId?: string;
+}
 
 export interface Rpc2JsonRpcRequest {
     jSONRPCRequest: JSONRPCRequest;
@@ -46,6 +57,64 @@ export interface SearchEntitiesRequest {
  * 
  */
 export class DefaultApi extends runtime.BaseAPI {
+
+    /**
+     * Returns a subgraph of nodes + links centered on the given node id, sourced from the materialized views `mv_graph_nodes` and `mv_graph_links`. The graph is event-centric: every link goes `Event → Entity`, so two entities are always connected through one or more intermediate event nodes. 
+     * Subgraph projection centered on an entity or event
+     */
+    async graphSubgraphRaw(requestParameters: GraphSubgraphRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<runtime.ApiResponse<GraphResponse>> {
+        if (requestParameters['center'] == null) {
+            throw new runtime.RequiredError(
+                'center',
+                'Required parameter "center" was null or undefined when calling graphSubgraph().'
+            );
+        }
+
+        const queryParameters: any = {};
+
+        if (requestParameters['center'] != null) {
+            queryParameters['center'] = requestParameters['center'];
+        }
+
+        if (requestParameters['depth'] != null) {
+            queryParameters['depth'] = requestParameters['depth'];
+        }
+
+        if (requestParameters['limitEvents'] != null) {
+            queryParameters['limit_events'] = requestParameters['limitEvents'];
+        }
+
+        if (requestParameters['tenant'] != null) {
+            queryParameters['tenant'] = requestParameters['tenant'];
+        }
+
+        const headerParameters: runtime.HTTPHeaders = {};
+
+        if (requestParameters['xTenantId'] != null) {
+            headerParameters['X-Tenant-Id'] = String(requestParameters['xTenantId']);
+        }
+
+
+        let urlPath = `/api/v1/graph`;
+
+        const response = await this.request({
+            path: urlPath,
+            method: 'GET',
+            headers: headerParameters,
+            query: queryParameters,
+        }, initOverrides);
+
+        return new runtime.JSONApiResponse(response, (jsonValue) => GraphResponseFromJSON(jsonValue));
+    }
+
+    /**
+     * Returns a subgraph of nodes + links centered on the given node id, sourced from the materialized views `mv_graph_nodes` and `mv_graph_links`. The graph is event-centric: every link goes `Event → Entity`, so two entities are always connected through one or more intermediate event nodes. 
+     * Subgraph projection centered on an entity or event
+     */
+    async graphSubgraph(requestParameters: GraphSubgraphRequest, initOverrides?: RequestInit | runtime.InitOverrideFunction): Promise<GraphResponse> {
+        const response = await this.graphSubgraphRaw(requestParameters, initOverrides);
+        return await response.value();
+    }
 
     /**
      * Envia un objeto JSON‑RPC 2.0 con `method` en {fetch_pdf, ocr_pdf, summarise_doc, entity_link}. Parámetro opcional `jurisdiction` (ISO 3166‑1 alpha‑2), por defecto `\"CL\"`. 
