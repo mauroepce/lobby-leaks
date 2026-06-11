@@ -91,6 +91,79 @@ paths:
         "422":
           description: Validation error (missing q, invalid limit)
 
+  /api/v1/graph:
+    get:
+      security: []
+      operationId: graphSubgraph
+      summary: Subgraph projection centered on an entity or event
+      description: >
+        Returns a subgraph of nodes + links centered on the given node id,
+        sourced from the materialized views `mv_graph_nodes` and
+        `mv_graph_links`. The graph is event-centric: every link goes
+        `Event → Entity`, so two entities are always connected through one
+        or more intermediate event nodes.
+      parameters:
+        - name: center
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+          description: Node id (Person, Organisation, or Event) to center on
+        - name: depth
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 2
+            minimum: 1
+            maximum: 2
+          description: 1 = direct events touching the center; 2 = + other entities co-occurring in those events
+        - name: limit_events
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+          description: Max direct events to include. When the center has more, `truncated` is true in the response.
+        - name: tenant
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: "^[A-Z]{2}$"
+          description: "ISO 3166-1 alpha-2 tenant code (alternative: X-Tenant-Id header)"
+        - name: X-Tenant-Id
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: "^[A-Z]{2}$"
+          description: "Tenant code via header (fallback if query param not present)"
+      responses:
+        "200":
+          description: Subgraph projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphResponse"
+        "400":
+          description: Missing/invalid tenant or conflicting tenant values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error400"
+        "404":
+          description: Center node not found for the given tenant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error400"
+        "422":
+          description: Validation error (missing center, depth out of range, limit_events out of range)
+
   /rpc2:
     post:
       operationId: rpc2JsonRpc
@@ -184,6 +257,56 @@ components:
           type: string
         rut:
           type: ["string", "null"]
+    GraphNode:
+      type: object
+      required: [id, type, label]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [person, organisation, event]
+        label:
+          type: string
+    GraphLink:
+      type: object
+      required: [source, target, label]
+      properties:
+        source:
+          type: string
+          format: uuid
+          description: Event id (graph is event-centric, source is always an event)
+        target:
+          type: string
+          format: uuid
+          description: Person or Organisation id
+        label:
+          type: string
+          enum: [PASIVO, ACTIVO, REPRESENTADO, FINANCIADOR, DONANTE]
+          description: Role the target plays in the source event
+    GraphResponse:
+      type: object
+      required: [center, depth, truncated, nodes, links]
+      properties:
+        center:
+          type: string
+          description: Echo of the requested center node id
+        depth:
+          type: integer
+          minimum: 1
+          maximum: 2
+        truncated:
+          type: boolean
+          description: True when the center has more direct events than `limit_events`
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphNode"
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/GraphLink"
     Error400:
       type: object
       required: [detail]

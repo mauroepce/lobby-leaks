@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from psycopg_pool import AsyncConnectionPool
 
+from .routers.graph import router as graph_router
 from .routers.search import router as search_router
 
 load_dotenv()
@@ -27,3 +28,4 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="LobbyLeaks API", version="0.1.0", lifespan=lifespan)
 app.include_router(search_router)
+app.include_router(graph_router)
