@@ -189,6 +189,14 @@ thin orchestrator script will be written during this milestone.
   load-bearing for the project's reproducibility — the next contributor
   cloning the repo would hit both within 5 minutes.
 
+- **`source` column on Person/Organisation is consumed by both module 01
+  (writes provenance from ingest) and potentially module 02 (read in
+  search responses).** Reason: it's the link between "where did this
+  entity come from" and the API surface that needs to disclose it. How
+  to apply: when adding a new ingest service, set `source = '<service-
+  name>'` consistently; when adding a new search-result field in
+  module 02, check if `source` should be projected.
+
 ## Blockers
 
 _None._ The canonical pipeline is unblocked end-to-end; remaining work is
